@@ -156,12 +156,15 @@ export function ControlPanel() {
         <div style={{ flex: 1 }}>
           <CameraPanel />
           <ColorPanel />
+          <BorderMarkerPanel />
+
+          <PanelSectionDivider />
+
           <MapToastPanel />
           <HiResPanel />
 
           <PanelSectionDivider />
 
-          <BorderMarkerPanel />
           <PickPushPanel />
           <RouteLinePanel />
           <ExportPanel />

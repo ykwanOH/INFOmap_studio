@@ -1,12 +1,7 @@
 /**
  * MACRO Map Studio — Map Toast Panel
- * A. 2D/3D CAM 설정 따름
- * B. 지명 항상 숨김
- * C. 국경 항상 표시
- * D. 도로 토글 따름
- * E/F. 컬러 스킴 3종: 투톤-그레이 / 베이지-그레이 / 블루-그레이
- * G/H/I. 각 스킴 컬러값
- * J. 기본 스킴: 투톤-그레이
+ * A. 2D/3D CAM 따름  B. 지명 항상 숨김  C. 국경 항상 표시
+ * D. 도로 토글 따름  E/F. 컬러 스킴 3종  G/H/I. 스킴 컬러  J. 기본=투톤-그레이
  */
 
 import { useRef, useEffect, useCallback, useState } from 'react';
@@ -15,8 +10,7 @@ import { useMapStore, type MapToastScheme } from '@/store/useMapStore';
 import { SectionPanel } from '@/components/ui/SectionPanel';
 
 if (!mapboxgl.accessToken) {
-  mapboxgl.accessToken =
-    (import.meta.env.VITE_MAPBOX_TOKEN as string) || '';
+  mapboxgl.accessToken = (import.meta.env.VITE_MAPBOX_TOKEN as string) || '';
 }
 
 const labelStyle = {
@@ -35,94 +29,100 @@ interface SchemeConfig {
   border: string;
 }
 
-// G. 투톤-그레이: 대지+녹지 #A0A0A0 / 수계 rgba(64,64,64,0.8) / 국경 #BEBEBE
-// H. 베이지-그레이: 대지+녹지 #CCC1B1 / 수계 rgba(38,46,77,0.8) / 국경 #C8C8C8
-// I. 블루-그레이: 대지+녹지 #898FB2 / 수계 rgba(23,41,77,0.8) / 국경 #BEBEBE
 const SCHEME_CONFIGS: Record<MapToastScheme, SchemeConfig> = {
-  twotone: {
-    labelKo: '투톤-그레이',
-    land:   '#A0A0A0',
-    water:  'rgba(64,64,64,0.80)',
-    border: '#BEBEBE',
-  },
-  beigegray: {
-    labelKo: '베이지-그레이',
-    land:   '#CCC1B1',
-    water:  'rgba(38,46,77,0.80)',
-    border: '#C8C8C8',
-  },
-  bluegray: {
-    labelKo: '블루-그레이',
-    land:   '#898FB2',
-    water:  'rgba(23,41,77,0.80)',
-    border: '#BEBEBE',
-  },
+  twotone:  { labelKo: '투톤-그레이',  land: '#A0A0A0', water: 'rgba(64,64,64,0.80)',  border: '#BEBEBE' },
+  beigegray:{ labelKo: '베이지-그레이', land: '#CCC1B1', water: 'rgba(38,46,77,0.80)',  border: '#C8C8C8' },
+  bluegray: { labelKo: '블루-그레이',  land: '#898FB2', water: 'rgba(23,41,77,0.80)',  border: '#BEBEBE' },
 };
 
 const SCHEME_ORDER: MapToastScheme[] = ['twotone', 'beigegray', 'bluegray'];
 
-const LABEL_PATTERNS = [
-  'country-label', 'state-label', 'settlement-label', 'settlement-subdivision-label',
-  'airport-label', 'poi-label', 'water-point-label', 'water-line-label',
-  'natural-point-label', 'natural-line-label', 'waterway-label',
-  'road-label', 'road-number-shield', 'road-exit-shield', '-label',
-];
+// 허용할 레이어 패턴 — 이 외 모든 레이어는 숨김
+const ALLOWED_LAYER_TYPES = new Set(['background', 'fill', 'line']);
 const LAND_IDS  = ['land', 'land-structure-polygon', 'landuse', 'landuse-residential'];
 const GREEN_IDS = ['national-park', 'landuse-park', 'landcover-wood', 'landcover-grass'];
 const WATER_IDS = ['water', 'water-shadow'];
 const BORDER_IDS = ['admin-0-boundary', 'admin-0-boundary-disputed'];
 
-function isLabel(id: string) { return LABEL_PATTERNS.some(p => id.includes(p)); }
-function isRoadLine(id: string, type: string) {
-  return type === 'line' && (id.startsWith('road-') || id.startsWith('bridge-') || id.startsWith('tunnel-'));
-}
-function isSubBoundary(id: string) {
-  return id.includes('admin-1') || id.includes('admin-2') ||
-         id.includes('admin-3') || id.includes('admin-4') ||
-         id.startsWith('macro-korea');
-}
+// borders useEffect에서 추가하는 커스텀 국경 레이어
+const CUSTOM_BORDER_IDS = ['macro-admin-country', 'macro-admin-state', 'macro-korea-sido', 'macro-korea-sgg'];
 
-function applySchemeToMini(map: mapboxgl.Map, scheme: MapToastScheme, showRoads: boolean) {
+function applySchemeToMini(
+  map: mapboxgl.Map,
+  scheme: MapToastScheme,
+  showRoads: boolean,
+  borderColor?: string, // Border & Marker에서 설정한 국경 색상
+) {
   const cfg = SCHEME_CONFIGS[scheme];
   const layers = map.getStyle()?.layers || [];
 
   for (const layer of layers) {
     const { id, type } = layer;
     try {
-      // B. 지명 항상 숨김
-      if (isLabel(id)) { map.setLayoutProperty(id, 'visibility', 'none'); continue; }
+      // symbol 레이어 전체 숨김 (지명, POI, 도로번호 등)
+      if (type === 'symbol') { map.setLayoutProperty(id, 'visibility', 'none'); continue; }
 
       // 배경
       if (type === 'background') { map.setPaintProperty(id, 'background-color', cfg.water); continue; }
 
       // 대지
-      if (LAND_IDS.includes(id) && type === 'fill') { map.setPaintProperty(id, 'fill-color', cfg.land); continue; }
+      if (LAND_IDS.includes(id) && type === 'fill') {
+        map.setPaintProperty(id, 'fill-color', cfg.land);
+        map.setPaintProperty(id, 'fill-opacity', 1);
+        continue;
+      }
 
-      // 녹지 — 대지와 동일
-      if (GREEN_IDS.includes(id) && type === 'fill') { map.setPaintProperty(id, 'fill-color', cfg.land); continue; }
+      // 녹지 — 대지와 동일색
+      if (GREEN_IDS.includes(id) && type === 'fill') {
+        map.setPaintProperty(id, 'fill-color', cfg.land);
+        map.setPaintProperty(id, 'fill-opacity', 1);
+        continue;
+      }
 
       // 수계 fill
-      if (WATER_IDS.includes(id) && type === 'fill') { map.setPaintProperty(id, 'fill-color', cfg.water); continue; }
+      if (WATER_IDS.includes(id) && type === 'fill') {
+        map.setPaintProperty(id, 'fill-color', cfg.water);
+        continue;
+      }
 
       // 수계 line
       if ((id === 'waterway' || id.includes('waterway')) && type === 'line') {
-        map.setPaintProperty(id, 'line-color', cfg.water); continue;
+        map.setLayoutProperty(id, 'visibility', 'visible');
+        map.setPaintProperty(id, 'line-color', cfg.water);
+        continue;
       }
 
-      // C. 국경 항상 표시
+      // C. 국경 (Mapbox 기본) — 항상 표시
       if (BORDER_IDS.includes(id) && type === 'line') {
         map.setLayoutProperty(id, 'visibility', 'visible');
-        map.setPaintProperty(id, 'line-color', cfg.border);
+        map.setPaintProperty(id, 'line-color', borderColor || cfg.border);
         map.setPaintProperty(id, 'line-width', 1.2);
         continue;
       }
 
-      // 국경 이하 경계선 숨김
-      if (isSubBoundary(id)) { map.setLayoutProperty(id, 'visibility', 'none'); continue; }
+      // 커스텀 국경 레이어 (macro-admin-*)
+      if (CUSTOM_BORDER_IDS.includes(id)) {
+        // country 레이어만 표시, 나머지는 숨김
+        if (id === 'macro-admin-country') {
+          map.setLayoutProperty(id, 'visibility', 'visible');
+          map.setPaintProperty(id, 'line-color', borderColor || cfg.border);
+        } else {
+          map.setLayoutProperty(id, 'visibility', 'none');
+        }
+        continue;
+      }
 
-      // D. 도로: 토글 따름
-      if (isRoadLine(id, type)) {
-        map.setLayoutProperty(id, 'visibility', showRoads ? 'visible' : 'none'); continue;
+      // 도로 — 토글 따름
+      if (type === 'line' && (id.startsWith('road-') || id.startsWith('bridge-') || id.startsWith('tunnel-'))) {
+        map.setLayoutProperty(id, 'visibility', showRoads ? 'visible' : 'none');
+        continue;
+      }
+
+      // 나머지 모든 레이어 숨김 (건물, POI fill, 교통 등)
+      if (!LAND_IDS.includes(id) && !GREEN_IDS.includes(id) && !WATER_IDS.includes(id) &&
+          !BORDER_IDS.includes(id) && !CUSTOM_BORDER_IDS.includes(id) &&
+          type !== 'background') {
+        map.setLayoutProperty(id, 'visibility', 'none');
       }
     } catch (_) {}
   }
@@ -135,9 +135,10 @@ export function MapToastPanel() {
 
   const {
     mapInstance,
-    mapToastActive, setMapToastActive,
+    setMapToastActive,
     mapToastScheme, setMapToastScheme,
     showRoads,
+    borders,
   } = useMapStore();
 
   const [syncing, setSyncing] = useState(false);
@@ -158,7 +159,7 @@ export function MapToastPanel() {
     mini.on('load', () => {
       miniLoadedRef.current = true;
       const store = useMapStore.getState();
-      applySchemeToMini(mini, store.mapToastScheme, store.showRoads);
+      applySchemeToMini(mini, store.mapToastScheme, store.showRoads, store.borders.country.color);
     });
     miniMapRef.current = mini;
     return () => {
@@ -168,12 +169,12 @@ export function MapToastPanel() {
     };
   }, []);
 
-  // ── 스킴·도로 변경 시 재적용 ──────────────────────────────────────────────
+  // ── 스킴·도로·국경색 변경 시 재적용 ──────────────────────────────────────
   useEffect(() => {
     const mini = miniMapRef.current;
     if (!mini || !miniLoadedRef.current) return;
-    applySchemeToMini(mini, mapToastScheme, showRoads);
-  }, [mapToastScheme, showRoads]);
+    applySchemeToMini(mini, mapToastScheme, showRoads, borders.country.color);
+  }, [mapToastScheme, showRoads, borders]);
 
   // ── A. 동기화: 메인맵 이동·pitch 따라감 ──────────────────────────────────
   useEffect(() => {
@@ -183,7 +184,7 @@ export function MapToastPanel() {
       mini.setCenter(mapInstance.getCenter());
       mini.setZoom(Math.max(0, mapInstance.getZoom() - 0.5));
       mini.setBearing(mapInstance.getBearing());
-      mini.setPitch(mapInstance.getPitch()); // 2D/3D CAM 따름
+      mini.setPitch(mapInstance.getPitch());
     };
     sync();
     mapInstance.on('move', sync);
@@ -281,7 +282,7 @@ export function MapToastPanel() {
           )}
         </div>
 
-        {/* E. 컬러 스킴 아이콘 3개 — 좌→우: 투톤/베이지/블루 */}
+        {/* E. 컬러 스킴 아이콘 3개 */}
         <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', alignItems: 'center' }}>
           {SCHEME_ORDER.map((scheme) => {
             const s = SCHEME_CONFIGS[scheme];
