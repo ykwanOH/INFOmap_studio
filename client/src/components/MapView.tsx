@@ -45,21 +45,26 @@ function isRoadLayer(id: string): boolean {
   return ROAD_LAYER_PATTERNS.some(p => id.startsWith(p));
 }
 
-// 고속/간선도로 레이어 (motorway, trunk, primary, secondary)
+// 고속/간선도로: motorway, trunk, primary (가장 상위 위계만)
 const EXPRESSWAY_LAYERS = [
   'road-motorway-trunk', 'road-motorway-trunk-case',
   'road-primary', 'road-primary-case',
-  'road-secondary-tertiary', 'road-secondary-tertiary-case',
   'bridge-motorway-trunk', 'bridge-motorway-trunk-case',
-  'bridge-primary-secondary-tertiary', 'bridge-primary-secondary-tertiary-case',
+  'bridge-primary-case', 'bridge-primary',
+  'tunnel-motorway-trunk', 'tunnel-motorway-trunk-case',
 ];
 
-// 국지/로컬 도로 레이어
+// 국지/로컬 도로: secondary 이하 모든 도로
 const LOCALROAD_LAYERS = [
+  'road-secondary-tertiary', 'road-secondary-tertiary-case',
   'road-street', 'road-street-case',
   'road-minor', 'road-minor-case',
-  'road-path', 'road-steps',
+  'road-path', 'road-steps', 'road-pedestrian', 'road-pedestrian-case',
+  'road-service-link', 'road-service-link-case',
+  'bridge-secondary-tertiary', 'bridge-secondary-tertiary-case',
   'bridge-street-minor', 'bridge-street-minor-case',
+  'tunnel-secondary-tertiary', 'tunnel-secondary-tertiary-case',
+  'tunnel-street-minor', 'tunnel-street-minor-case',
 ];
 
 export default function MapView() {
@@ -588,30 +593,44 @@ function applyLabelVisibility(map: mapboxgl.Map, visible: boolean) {
     const style = map.getStyle();
     if (!style?.layers) return;
     for (const layer of style.layers) {
-      // showLabels=false 시 모든 텍스트 레이어 숨김 (도로 레이블 포함)
-      if (isLabelLayer(layer.id)) {
+      if (!isLabelLayer(layer.id)) continue;
+      try {
         map.setLayoutProperty(layer.id, 'visibility', visible ? 'visible' : 'none');
-      }
+        // 켜질 때 한글 우선 표시 설정
+        if (visible) {
+          map.setLayoutProperty(layer.id, 'text-field', [
+            'coalesce',
+            ['get', 'name_ko'],
+            ['get', 'name'],
+          ]);
+        }
+      } catch (_) {}
     }
   } catch (e) {}
 }
 
 function applyRoadVisibility(map: mapboxgl.Map, visible: boolean) {
   try {
-    const style = map.getStyle();
-    if (!style?.layers) return;
     const showLabels = useMapStore.getState().showLabels;
-    for (const layer of style.layers) {
-      if (isRoadLayer(layer.id)) {
-        if (isLabelLayer(layer.id)) {
-          // 도로 레이블은 showLabels와 showRoads 둘 다 true일 때만 표시
-          map.setLayoutProperty(layer.id, 'visibility', (visible && showLabels) ? 'visible' : 'none');
-        } else {
-          // 도로 선은 showRoads만 체크
-          map.setLayoutProperty(layer.id, 'visibility', visible ? 'visible' : 'none');
+    // EXPRESSWAY + LOCALROAD 배열 기반으로 통일 적용
+    const allRoadLayers = [...EXPRESSWAY_LAYERS, ...LOCALROAD_LAYERS];
+    for (const id of allRoadLayers) {
+      if (!map.getLayer(id)) continue;
+      try {
+        map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
+      } catch (_) {}
+    }
+    // 도로 레이블은 showLabels && showRoads 둘 다일 때만
+    try {
+      const style = map.getStyle();
+      if (style?.layers) {
+        for (const layer of style.layers) {
+          if (isLabelLayer(layer.id) && isRoadLayer(layer.id)) {
+            map.setLayoutProperty(layer.id, 'visibility', (visible && showLabels) ? 'visible' : 'none');
+          }
         }
       }
-    }
+    } catch (_) {}
   } catch (e) {}
 }
 

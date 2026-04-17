@@ -38,10 +38,10 @@ export function SectionPanel({ sectionKey, title, children, noPadding }: Section
       </button>
       {isOpen && (
         <div style={noPadding ? {} : {
-          padding: '10px 14px',
+          padding: '8px 14px',
           display: 'flex',
           flexDirection: 'column',
-          gap: '10px',
+          gap: '8px',
         }}>
           {children}
         </div>

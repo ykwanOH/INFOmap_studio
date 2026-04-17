@@ -65,7 +65,7 @@ export function CameraPanel() {
       </div>
 
       {/* 벡터뷰 / 위성뷰 thumbnail buttons */}
-      <div style={{ display: 'flex', gap: '8px' }}>
+      <div style={{ display: 'flex', gap: '6px' }}>
         <button
           className={`map-thumb-btn ${mapStyle === 'vector' ? 'active' : ''}`}
           onClick={() => setMapStyle('vector')}
@@ -132,7 +132,7 @@ export function CameraPanel() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingTop: '4px',
+        paddingTop: '2px',
       }}>
         <span style={{
           fontFamily: "'DM Sans', sans-serif",
