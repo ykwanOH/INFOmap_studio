@@ -118,6 +118,8 @@
     background: var(--glass-bg);
     border: 1px solid var(--glass-border);
     box-shadow: 0 2px 16px rgba(0,0,0,0.10), 0 1px 4px rgba(0,0,0,0.06);
+    box-sizing: border-box;
+    overflow-x: hidden;
   }
 
   /* ── Section Label (uppercase mono, matches sibling) ── */
@@ -270,11 +272,11 @@
   /* ── Small action button (matches sibling: RESET LIGHT style) ── */
   .action-btn {
     font-family: 'DM Sans', sans-serif;
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 500;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.04em;
     text-transform: uppercase;
-    padding: 5px 10px;
+    padding: 5px 8px;
     border: 1px solid var(--glass-border);
     background: transparent;
     color: var(--section-label-color);

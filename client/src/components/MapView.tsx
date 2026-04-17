@@ -45,25 +45,33 @@ function isRoadLayer(id: string): boolean {
   return ROAD_LAYER_PATTERNS.some(p => id.startsWith(p));
 }
 
-// 고속/간선도로: motorway, trunk, primary (가장 상위 위계만)
+// A. 고속/간선도로: motorway, trunk, primary
 const EXPRESSWAY_LAYERS = [
   'road-motorway-trunk', 'road-motorway-trunk-case',
   'road-primary', 'road-primary-case',
   'bridge-motorway-trunk', 'bridge-motorway-trunk-case',
-  'bridge-primary-case', 'bridge-primary',
+  'bridge-primary', 'bridge-primary-case',
   'tunnel-motorway-trunk', 'tunnel-motorway-trunk-case',
+  'tunnel-primary', 'tunnel-primary-case',
 ];
 
-// 국지/로컬 도로: secondary 이하 모든 도로
-const LOCALROAD_LAYERS = [
+// B. 일반도로: secondary, tertiary, residential
+const STREETROAD_LAYERS = [
   'road-secondary-tertiary', 'road-secondary-tertiary-case',
   'road-street', 'road-street-case',
-  'road-minor', 'road-minor-case',
-  'road-path', 'road-steps', 'road-pedestrian', 'road-pedestrian-case',
-  'road-service-link', 'road-service-link-case',
   'bridge-secondary-tertiary', 'bridge-secondary-tertiary-case',
-  'bridge-street-minor', 'bridge-street-minor-case',
+  'bridge-street', 'bridge-street-case',
   'tunnel-secondary-tertiary', 'tunnel-secondary-tertiary-case',
+  'tunnel-street', 'tunnel-street-case',
+];
+
+// C. 세부도로: service, path, steps, minor 등
+const LOCALROAD_LAYERS = [
+  'road-minor', 'road-minor-case',
+  'road-path', 'road-steps',
+  'road-pedestrian', 'road-pedestrian-case',
+  'road-service-link', 'road-service-link-case',
+  'bridge-street-minor', 'bridge-street-minor-case',
   'tunnel-street-minor', 'tunnel-street-minor-case',
 ];
 
@@ -132,7 +140,6 @@ export default function MapView() {
     map.once('style.load', () => {
       styleLoadedRef.current = true;
       initCustomLayers(map);
-      // 스타일 변경 후 현재 상태 재적용
       const store = useMapStore.getState();
       applyColors(map, store.colors);
       applyLabelVisibility(map, store.showLabels);
@@ -611,16 +618,24 @@ function applyLabelVisibility(map: mapboxgl.Map, visible: boolean) {
 
 function applyRoadVisibility(map: mapboxgl.Map, visible: boolean) {
   try {
-    // 도로 선 레이어만 토글 (EXPRESSWAY + LOCALROAD 배열 기반)
-    const allRoadLayers = [...EXPRESSWAY_LAYERS, ...LOCALROAD_LAYERS];
-    for (const id of allRoadLayers) {
+    // ON: expressway + streetroad만 표시 (localroad는 항상 숨김)
+    // OFF: 전체 숨김
+    const showLayers = visible
+      ? [...EXPRESSWAY_LAYERS, ...STREETROAD_LAYERS]
+      : [];
+    const hideLayers = visible
+      ? LOCALROAD_LAYERS
+      : [...EXPRESSWAY_LAYERS, ...STREETROAD_LAYERS, ...LOCALROAD_LAYERS];
+
+    for (const id of showLayers) {
       if (!map.getLayer(id)) continue;
-      try {
-        map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
-      } catch (_) {}
+      try { map.setLayoutProperty(id, 'visibility', 'visible'); } catch (_) {}
     }
-    // 도로명(road-label 등)은 도로 토글과 무관하게 항상 숨김
-    // 지역명 토글(showLabels)만 텍스트 레이어를 제어함
+    for (const id of hideLayers) {
+      if (!map.getLayer(id)) continue;
+      try { map.setLayoutProperty(id, 'visibility', 'none'); } catch (_) {}
+    }
+    // 도로명 레이어 항상 숨김 (도로 토글과 무관)
     try {
       const style = map.getStyle();
       if (style?.layers) {
@@ -681,7 +696,7 @@ function applyColors(map: mapboxgl.Map, colors: import('@/store/useMapStore').Co
       if (map.getLayer(id)) map.setPaintProperty(id, 'fill-color', colors.green);
     }
 
-    // ── 고속/간선도로 — 벡터/위성 모두 동일 적용 ──
+    // ── 고속/간선도로 (A) — 벡터/위성 동일 ──
     for (const id of EXPRESSWAY_LAYERS) {
       if (!map.getLayer(id)) continue;
       try {
@@ -691,7 +706,17 @@ function applyColors(map: mapboxgl.Map, colors: import('@/store/useMapStore').Co
       } catch (_) {}
     }
 
-    // ── 국지/로컬 도로 — 벡터/위성 모두 동일 적용 ──
+    // ── 일반도로 (B) — 벡터/위성 동일 ──
+    for (const id of STREETROAD_LAYERS) {
+      if (!map.getLayer(id)) continue;
+      try {
+        const t = map.getLayer(id)?.type;
+        if (t === 'line') map.setPaintProperty(id, 'line-color', colors.streetroad);
+        else if (t === 'fill') map.setPaintProperty(id, 'fill-color', colors.streetroad);
+      } catch (_) {}
+    }
+
+    // ── 세부도로 (C) — 벡터/위성 동일 ──
     for (const id of LOCALROAD_LAYERS) {
       if (!map.getLayer(id)) continue;
       try {
@@ -755,38 +780,50 @@ function initCustomLayers(map: mapboxgl.Map) {
   }
 
   // ── 위성뷰 도로 굵기 override ─────────────────────────────────────────
-  // 위성뷰 기본 도로가 너무 굵으므로 줌 단계별로 조절
-  // Z5 이하: 70%, Z5-7: 75%, Z7+: 75% 유지, Z9 이후 급격한 굵기 증가 억제
+  // 위성뷰 기본 도로가 너무 굵으므로 원래 대비 50% 수준으로 조절
+  // Z5이하: 50%, Z5-7: 60%, Z7이후: 60% 유지, Z9 급증 억제
   const applyRoadWidthOverride = () => {
-    // 고속/간선도로 (motorway, trunk, primary)
+    // A. 고속/간선도로 — z5이하 50%, z5-7 60%, z7+ 60%
     for (const id of EXPRESSWAY_LAYERS) {
       if (!map.getLayer(id)) continue;
       try {
         map.setPaintProperty(id, 'line-width', [
           'interpolate', ['linear'], ['zoom'],
-          3,  1.0,   // z3: 기본 대비 70%
-          5,  1.4,   // z5: 70% 수준
-          7,  2.1,   // z7: 75% 수준
-          9,  2.8,   // z9: z7과 유사하게 억제
-          12, 3.5,   // z12+: 완만하게 증가
+          3,  0.5,
+          5,  0.8,
+          7,  1.2,
+          9,  1.2,  // z9 급증 억제
+          12, 1.6,
         ]);
       } catch (_) {}
     }
-    // 국지/로컬 도로 (secondary 이하)
+    // B. 일반도로 — z5-7 60%, z7+ 60% 유지
+    for (const id of STREETROAD_LAYERS) {
+      if (!map.getLayer(id)) continue;
+      try {
+        map.setPaintProperty(id, 'line-width', [
+          'interpolate', ['linear'], ['zoom'],
+          5,  0.5,
+          7,  0.8,
+          9,  0.8,  // z9 급증 억제
+          12, 1.2,
+        ]);
+      } catch (_) {}
+    }
+    // C. 세부도로 — 동일 기준
     for (const id of LOCALROAD_LAYERS) {
       if (!map.getLayer(id)) continue;
       try {
         map.setPaintProperty(id, 'line-width', [
           'interpolate', ['linear'], ['zoom'],
-          5,  0.6,
-          7,  1.0,
-          9,  1.2,   // z9 급증 억제 — z7과 유사하게
-          12, 1.8,
+          7,  0.5,
+          9,  0.6,
+          12, 0.9,
         ]);
       } catch (_) {}
     }
   };
-  // style.load 이후에 적용 (현재 스타일이 satellite일 때만)
+  // 위성 스타일일 때만 적용
   if (map.getStyle()?.name?.toLowerCase().includes('satellite')) {
     applyRoadWidthOverride();
   }

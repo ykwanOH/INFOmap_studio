@@ -23,7 +23,8 @@ export interface ColorConfig {
   hydro: string;       // 수계
   green: string;       // 녹지
   expressway: string;  // 고속/간선도로 (motorway, trunk, primary)
-  localroad: string;   // 국지/로컬 도로 (secondary 이하)
+  streetroad: string;  // 일반도로 (secondary, tertiary, residential)
+  localroad: string;   // 세부도로 (service, path, steps 등)
 }
 
 export interface BorderConfig {
@@ -174,13 +175,14 @@ const DEFAULT_COLORS: ColorConfig = {
   hydro:      '#BAC1D3',
   green:      '#B3BDA3',
   expressway: '#ECECEC',
+  streetroad: '#E8E2E0',
   localroad:  '#ECE6E4',
 };
 
 const DEFAULT_BORDERS: Record<BorderLevel, BorderConfig> = {
-  country:  { enabled: true,  color: '#4a4540', width: 1.5 },
-  state:    { enabled: false, color: '#6e6862', width: 0.8 },
-  district: { enabled: false, color: '#a09c98', width: 0.6 },
+  country:  { enabled: true,  color: '#403E35', width: 3.0 },
+  state:    { enabled: false, color: '#F2EBE8', width: 1.0 },
+  district: { enabled: false, color: '#F2EBE8', width: 1.0 },
 };
 
 const DEFAULT_FLY_ROUTE: FlyRoute = {

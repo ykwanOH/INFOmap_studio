@@ -39,103 +39,100 @@ interface SchemeConfig {
   thumbWater: string;
   thumbBorder: string;
   // 맵 스타일 커스터마이즈 함수
-  applyToMap: (map: mapboxgl.Map) => void;
+  applyToMap: (map: mapboxgl.Map, showRoads?: boolean) => void;
+}
+
+// 공통 레이어 적용 헬퍼
+function applyMiniScheme(
+  map: mapboxgl.Map,
+  landColor: string,
+  waterColor: string,
+  borderColor: string,
+  showRoads: boolean,
+) {
+  const LAND_LAYERS = ['land', 'land-structure-polygon', 'landuse', 'landuse-residential'];
+  const GREEN_LAYERS = ['national-park', 'landuse-park', 'landcover-wood', 'landcover-grass'];
+  const WATER_LAYERS = ['water', 'water-shadow'];
+  const BORDER_LAYERS = ['admin-0-boundary', 'admin-0-boundary-disputed'];
+  // 도로 레이어 (미니맵용 간략 목록)
+  const MINI_ROAD_LAYERS = [
+    'road-motorway-trunk', 'road-primary', 'road-secondary-tertiary',
+    'road-street', 'road-minor', 'bridge-motorway-trunk', 'bridge-primary',
+  ];
+
+  const layers = map.getStyle()?.layers || [];
+  for (const layer of layers) {
+    try {
+      if (layer.id === 'background') {
+        map.setPaintProperty(layer.id, 'background-color', waterColor);
+      } else if (LAND_LAYERS.includes(layer.id)) {
+        if (layer.type === 'fill') map.setPaintProperty(layer.id, 'fill-color', landColor);
+      } else if (WATER_LAYERS.includes(layer.id)) {
+        if (layer.type === 'fill') map.setPaintProperty(layer.id, 'fill-color', waterColor);
+      } else if (layer.id === 'waterway') {
+        if (layer.type === 'line') map.setPaintProperty(layer.id, 'line-color', waterColor);
+      } else if (GREEN_LAYERS.includes(layer.id)) {
+        if (layer.type === 'fill') map.setPaintProperty(layer.id, 'fill-color', landColor);
+      } else if (BORDER_LAYERS.includes(layer.id)) {
+        if (layer.type === 'line') {
+          map.setPaintProperty(layer.id, 'line-color', borderColor);
+          map.setPaintProperty(layer.id, 'line-width', 1.5);
+          map.setLayoutProperty(layer.id, 'visibility', 'visible');
+        }
+      }
+      // 지명 항상 숨김
+      if (isLabelOrRoadLayer(layer.id)) {
+        map.setLayoutProperty(layer.id, 'visibility', 'none');
+      }
+    } catch (_) {}
+  }
+  // 도로 토글 따르기
+  for (const id of MINI_ROAD_LAYERS) {
+    if (!map.getLayer(id)) continue;
+    try { map.setLayoutProperty(id, 'visibility', showRoads ? 'visible' : 'none'); } catch (_) {}
+  }
+  // 국경 항상 재표시 (도로 숨김으로 덮어쓰여질 수 있으므로)
+  for (const id of BORDER_LAYERS) {
+    if (!map.getLayer(id)) continue;
+    try {
+      map.setLayoutProperty(id, 'visibility', 'visible');
+      map.setPaintProperty(id, 'line-color', borderColor);
+    } catch (_) {}
+  }
 }
 
 const SCHEME_CONFIGS: Record<MapToastScheme, SchemeConfig> = {
   twotone: {
     label: 'Two-Tone Gray',
     labelKo: '투톤-그레이',
+    // F. 대지·녹지: RGB(160,160,160), 수계: RGB(64,64,64) op80%, 국경: RGB(190,190,190)
     thumbLand: '#A0A0A0',
-    thumbWater: '#FFFFFF',
+    thumbWater: 'rgba(64,64,64,0.8)',
     thumbBorder: '#BEBEBE',
-    applyToMap: (map) => {
-      // 대지: 중회색 (160,160,160)
-      // 수계: 흰색 (255,255,255)
-      // 국경: (190,190,190)
-      // 배경: 짙은 회색 (64,64,64) op80%
-      const layers = map.getStyle()?.layers || [];
-      for (const layer of layers) {
-        try {
-          if (layer.id === 'background') {
-            map.setPaintProperty(layer.id, 'background-color', 'rgba(64,64,64,0.80)');
-          } else if (['land', 'land-structure-polygon', 'landuse', 'landuse-residential'].includes(layer.id)) {
-            if (layer.type === 'fill') map.setPaintProperty(layer.id, 'fill-color', '#A0A0A0');
-          } else if (['water', 'water-shadow'].includes(layer.id)) {
-            if (layer.type === 'fill') map.setPaintProperty(layer.id, 'fill-color', '#FFFFFF');
-          } else if (layer.id === 'waterway') {
-            if (layer.type === 'line') map.setPaintProperty(layer.id, 'line-color', '#FFFFFF');
-          } else if (['national-park', 'landuse-park', 'landcover-wood', 'landcover-grass'].includes(layer.id)) {
-            if (layer.type === 'fill') map.setPaintProperty(layer.id, 'fill-color', '#909090');
-          } else if (['admin-0-boundary', 'admin-0-boundary-disputed', 'admin-1-boundary'].includes(layer.id)) {
-            if (layer.type === 'line') map.setPaintProperty(layer.id, 'line-color', '#BEBEBE');
-          }
-          // 지역명, 도로명 숨김
-          if (isLabelOrRoadLayer(layer.id)) {
-            map.setLayoutProperty(layer.id, 'visibility', 'none');
-          }
-        } catch (_) {}
-      }
+    applyToMap: (map, showRoads = false) => {
+      applyMiniScheme(map, '#A0A0A0', 'rgba(64,64,64,0.80)', '#BEBEBE', showRoads);
     },
   },
   beigegray: {
     label: 'Beige-Gray',
     labelKo: '베이지-그레이',
-    thumbLand: '#C8B89A',
-    thumbWater: '#D4C8B0',
-    thumbBorder: '#A89880',
-    applyToMap: (map) => {
-      const layers = map.getStyle()?.layers || [];
-      for (const layer of layers) {
-        try {
-          if (layer.id === 'background') {
-            map.setPaintProperty(layer.id, 'background-color', '#8A7A68');
-          } else if (['land', 'land-structure-polygon', 'landuse', 'landuse-residential'].includes(layer.id)) {
-            if (layer.type === 'fill') map.setPaintProperty(layer.id, 'fill-color', '#C8B89A');
-          } else if (['water', 'water-shadow'].includes(layer.id)) {
-            if (layer.type === 'fill') map.setPaintProperty(layer.id, 'fill-color', '#D4C8B0');
-          } else if (layer.id === 'waterway') {
-            if (layer.type === 'line') map.setPaintProperty(layer.id, 'line-color', '#D4C8B0');
-          } else if (['national-park', 'landuse-park', 'landcover-wood', 'landcover-grass'].includes(layer.id)) {
-            if (layer.type === 'fill') map.setPaintProperty(layer.id, 'fill-color', '#B0A888');
-          } else if (['admin-0-boundary', 'admin-0-boundary-disputed', 'admin-1-boundary'].includes(layer.id)) {
-            if (layer.type === 'line') map.setPaintProperty(layer.id, 'line-color', '#A89880');
-          }
-          if (isLabelOrRoadLayer(layer.id)) {
-            map.setLayoutProperty(layer.id, 'visibility', 'none');
-          }
-        } catch (_) {}
-      }
+    // G. 대지·녹지: #CCC1B1, 수계: #262E4D op80%, 국경: RGB(200,200,200)
+    thumbLand: '#CCC1B1',
+    thumbWater: 'rgba(38,46,77,0.8)',
+    thumbBorder: '#C8C8C8',
+    applyToMap: (map, showRoads = false) => {
+      applyMiniScheme(map, '#CCC1B1', 'rgba(38,46,77,0.80)', '#C8C8C8', showRoads);
     },
   },
   bluegray: {
     label: 'Blue-Gray',
     labelKo: '블루-그레이',
-    thumbLand: '#B0BCC8',
-    thumbWater: '#D0DCE8',
-    thumbBorder: '#8898A8',
-    applyToMap: (map) => {
-      const layers = map.getStyle()?.layers || [];
-      for (const layer of layers) {
-        try {
-          if (layer.id === 'background') {
-            map.setPaintProperty(layer.id, 'background-color', '#607080');
-          } else if (['land', 'land-structure-polygon', 'landuse', 'landuse-residential'].includes(layer.id)) {
-            if (layer.type === 'fill') map.setPaintProperty(layer.id, 'fill-color', '#B0BCC8');
-          } else if (['water', 'water-shadow'].includes(layer.id)) {
-            if (layer.type === 'fill') map.setPaintProperty(layer.id, 'fill-color', '#D0DCE8');
-          } else if (layer.id === 'waterway') {
-            if (layer.type === 'line') map.setPaintProperty(layer.id, 'line-color', '#D0DCE8');
-          } else if (['national-park', 'landuse-park', 'landcover-wood', 'landcover-grass'].includes(layer.id)) {
-            if (layer.type === 'fill') map.setPaintProperty(layer.id, 'fill-color', '#98A8B8');
-          } else if (['admin-0-boundary', 'admin-0-boundary-disputed', 'admin-1-boundary'].includes(layer.id)) {
-            if (layer.type === 'line') map.setPaintProperty(layer.id, 'line-color', '#8898A8');
-          }
-          if (isLabelOrRoadLayer(layer.id)) {
-            map.setLayoutProperty(layer.id, 'visibility', 'none');
-          }
-        } catch (_) {}
-      }
+    // H. 대지·녹지: #898FB2, 수계: #17294D op80%, 국경: RGB(190,190,190)
+    thumbLand: '#898FB2',
+    thumbWater: 'rgba(23,41,77,0.8)',
+    thumbBorder: '#BEBEBE',
+    applyToMap: (map, showRoads = false) => {
+      applyMiniScheme(map, '#898FB2', 'rgba(23,41,77,0.80)', '#BEBEBE', showRoads);
     },
   },
 };
@@ -184,7 +181,7 @@ export function MapToastPanel() {
   const miniLoadedRef = useRef(false);
   const syncCleanupRef = useRef<(() => void) | null>(null);
 
-  const { mapInstance, mapToastActive, setMapToastActive, mapToastScheme, setMapToastScheme, colors } = useMapStore();
+  const { mapInstance, mapToastActive, setMapToastActive, mapToastScheme, setMapToastScheme, colors, viewMode, showRoads, borders } = useMapStore();
   const [syncing, setSyncing] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -204,7 +201,7 @@ export function MapToastPanel() {
       miniLoadedRef.current = true;
       const store = useMapStore.getState();
       // 초기 스킴 적용
-      SCHEME_CONFIGS[store.mapToastScheme].applyToMap(mini);
+      SCHEME_CONFIGS[store.mapToastScheme].applyToMap(mini, useMapStore.getState().showRoads);
       // Color 탭에서 설정한 콜러 적용
       applyColorsToMiniMap(mini, store.colors);
     });
@@ -223,7 +220,7 @@ export function MapToastPanel() {
     SCHEME_CONFIGS[mapToastScheme].applyToMap(mini);
     // 스킴 변경 후 현재 Color 탭 콜러도 적용
     applyColorsToMiniMap(mini, colors);
-  }, [mapToastScheme]);
+  }, [mapToastScheme, showRoads]);
 
   // ── Color 탭 콜러 변경 시 미니맵에도 적용 ──────────────────────────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -242,6 +239,8 @@ export function MapToastPanel() {
       mini.setCenter(mapInstance.getCenter());
       mini.setZoom(Math.max(0, mapInstance.getZoom() - 0.5));
       mini.setBearing(mapInstance.getBearing());
+      // 2D/3D CAM 따르기
+      mini.setPitch(mapInstance.getPitch());
     };
 
     // 즉시 한 번 동기화
@@ -449,7 +448,7 @@ export function MapToastPanel() {
                   position: 'absolute',
                   bottom: 0, left: 0, right: 0,
                   height: '45%',
-                  background: s.thumbWater,
+                  background: s.thumbLand,
                 }} />
                 {/* 경계선 */}
                 <div style={{
