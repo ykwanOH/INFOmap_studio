@@ -152,8 +152,7 @@ export function MapToastPanel() {
     borders,
   } = useMapStore();
 
-  const [syncing, setSyncing] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [miniReady, setMiniReady] = useState(false);
 
   // ── 미니맵 초기화 ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -171,6 +170,8 @@ export function MapToastPanel() {
       miniLoadedRef.current = true;
       const store = useMapStore.getState();
       applySchemeToMini(mini, store.mapToastScheme, store.showRoads, store.borders.country.color, store.borders.country.width);
+      // 스킴 적용 완료 후 표시 — 기본 Mapbox 테마 노출 방지
+      setMiniReady(true);
     });
     miniMapRef.current = mini;
     return () => {
@@ -246,6 +247,7 @@ export function MapToastPanel() {
           <div ref={miniContainerRef} style={{
             position: 'absolute', inset: 0, width: '100%', height: '100%',
             filter: syncing ? 'none' : 'brightness(0.7)', transition: 'filter 0.3s',
+            opacity: miniReady ? 1 : 0, transition: 'opacity 0.3s, filter 0.3s',
           }} />
 
           {!syncing && (

@@ -12,7 +12,7 @@ const COLOR_LABELS: { key: keyof ColorConfig; label: string }[] = [
   { key: 'landmass',   label: '대지' },
   { key: 'hydro',      label: '수계' },
   { key: 'green',      label: '녹지' },
-  { key: 'expressway', label: '고속.간선도로' },
+  { key: 'expressway', label: '고속·간선도로' },
   { key: 'streetroad', label: '집산·일반도로' },
 ];
 
