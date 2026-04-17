@@ -642,20 +642,21 @@ function applyRoadWidthOverride(map: mapboxgl.Map) {
       if (!tier) continue;
       try {
         if (tier === 'expressway') {
+          // 이전 값의 75%
           map.setPaintProperty(layer.id, 'line-width', [
             'interpolate', ['linear'], ['zoom'],
-            3, 0.12, 5, 0.21, 7, 0.33, 9, 0.42, 12, 0.6, 15, 0.75,
+            3, 0.09, 5, 0.16, 7, 0.25, 9, 0.32, 12, 0.45, 15, 0.56,
           ]);
         } else if (tier === 'street') {
           map.setPaintProperty(layer.id, 'line-width', [
             'interpolate', ['linear'], ['zoom'],
-            5, 0.14, 7, 0.25, 9, 0.29, 12, 0.44, 15, 0.59,
+            11, 0, 12.5, 0.29, 14, 0.44, 15, 0.59,
           ]);
           map.setPaintProperty(layer.id, 'line-opacity', 1);
         } else {
           map.setPaintProperty(layer.id, 'line-width', [
             'interpolate', ['linear'], ['zoom'],
-            7, 0.1, 9, 0.15, 12, 0.25,
+            11, 0, 12.5, 0.15, 14, 0.25,
           ]);
         }
       } catch (_) {}
