@@ -45,35 +45,40 @@ function isRoadLayer(id: string): boolean {
   return ROAD_LAYER_PATTERNS.some(p => id.startsWith(p));
 }
 
+// 도로 레이어 분류 — 패턴 기반 (벡터/위성 스타일 모두 대응)
 // A. 고속/간선도로: motorway, trunk, primary
-const EXPRESSWAY_LAYERS = [
-  'road-motorway-trunk', 'road-motorway-trunk-case',
-  'road-primary', 'road-primary-case',
-  'bridge-motorway-trunk', 'bridge-motorway-trunk-case',
-  'bridge-primary', 'bridge-primary-case',
-  'tunnel-motorway-trunk', 'tunnel-motorway-trunk-case',
-  'tunnel-primary', 'tunnel-primary-case',
-];
+const EXPRESSWAY_PATTERNS = ['motorway', 'trunk', 'primary'];
+// B. 일반도로: secondary, tertiary, street, residential
+const STREETROAD_PATTERNS = ['secondary', 'tertiary', 'street', 'residential'];
+// C. 세부도로: minor, path, steps, service, pedestrian
+const LOCALROAD_PATTERNS = ['minor', 'path', 'steps', 'service', 'pedestrian', 'ferry'];
 
-// B. 일반도로: secondary, tertiary, residential
-const STREETROAD_LAYERS = [
-  'road-secondary-tertiary', 'road-secondary-tertiary-case',
-  'road-street', 'road-street-case',
-  'bridge-secondary-tertiary', 'bridge-secondary-tertiary-case',
-  'bridge-street', 'bridge-street-case',
-  'tunnel-secondary-tertiary', 'tunnel-secondary-tertiary-case',
-  'tunnel-street', 'tunnel-street-case',
-];
+// 레이어 ID가 도로 선 레이어인지 확인
+function isRoadLineLayer(id: string, type: string): boolean {
+  if (type !== 'line') return false;
+  return id.startsWith('road-') || id.startsWith('bridge-') || id.startsWith('tunnel-');
+}
 
-// C. 세부도로: service, path, steps, minor 등
-const LOCALROAD_LAYERS = [
-  'road-minor', 'road-minor-case',
-  'road-path', 'road-steps',
-  'road-pedestrian', 'road-pedestrian-case',
-  'road-service-link', 'road-service-link-case',
-  'bridge-street-minor', 'bridge-street-minor-case',
-  'tunnel-street-minor', 'tunnel-street-minor-case',
-];
+// 레이어 ID로 도로 등급 판별
+function getRoadTier(id: string): 'expressway' | 'street' | 'local' | null {
+  const lower = id.toLowerCase();
+  if (EXPRESSWAY_PATTERNS.some(p => lower.includes(p))) return 'expressway';
+  if (STREETROAD_PATTERNS.some(p => lower.includes(p))) return 'street';
+  if (LOCALROAD_PATTERNS.some(p => lower.includes(p))) return 'local';
+  // 그 외 road- bridge- tunnel- 은 local로 처리
+  if (lower.startsWith('road-') || lower.startsWith('bridge-') || lower.startsWith('tunnel-')) return 'local';
+  return null;
+}
+
+// 패턴 기반으로 현재 스타일의 레이어 목록을 동적으로 가져옴
+function getRoadLayersByTier(map: mapboxgl.Map, tier: 'expressway' | 'street' | 'local'): string[] {
+  try {
+    const layers = map.getStyle()?.layers || [];
+    return layers
+      .filter(l => isRoadLineLayer(l.id, l.type) && getRoadTier(l.id) === tier)
+      .map(l => l.id);
+  } catch (_) { return []; }
+}
 
 export default function MapView() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -144,6 +149,10 @@ export default function MapView() {
       applyColors(map, store.colors);
       applyLabelVisibility(map, store.showLabels);
       applyRoadVisibility(map, store.showRoads);
+      // 위성뷰 전환 시 도로 굵기 override
+      if (mapStyle === 'satellite') {
+        applyRoadWidthOverride(map);
+      }
     });
   }, [mapStyle]);
 
@@ -595,6 +604,36 @@ export default function MapView() {
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
+function applyRoadWidthOverride(map: mapboxgl.Map) {
+  // 위성뷰 도로 굵기를 원래 대비 50% 수준으로 줄임 — 패턴 기반으로 모든 레이어 적용
+  try {
+    const layers = map.getStyle()?.layers || [];
+    for (const layer of layers) {
+      if (!isRoadLineLayer(layer.id, layer.type)) continue;
+      const tier = getRoadTier(layer.id);
+      if (!tier) continue;
+      try {
+        if (tier === 'expressway') {
+          map.setPaintProperty(layer.id, 'line-width', [
+            'interpolate', ['linear'], ['zoom'],
+            3, 0.5, 5, 0.8, 7, 1.2, 9, 1.2, 12, 1.6,
+          ]);
+        } else if (tier === 'street') {
+          map.setPaintProperty(layer.id, 'line-width', [
+            'interpolate', ['linear'], ['zoom'],
+            5, 0.5, 7, 0.8, 9, 0.8, 12, 1.2,
+          ]);
+        } else {
+          map.setPaintProperty(layer.id, 'line-width', [
+            'interpolate', ['linear'], ['zoom'],
+            7, 0.4, 9, 0.5, 12, 0.8,
+          ]);
+        }
+      } catch (_) {}
+    }
+  } catch (e) {}
+}
+
 function applyLabelVisibility(map: mapboxgl.Map, visible: boolean) {
   try {
     const style = map.getStyle();
@@ -618,34 +657,28 @@ function applyLabelVisibility(map: mapboxgl.Map, visible: boolean) {
 
 function applyRoadVisibility(map: mapboxgl.Map, visible: boolean) {
   try {
-    // ON: expressway + streetroad만 표시 (localroad는 항상 숨김)
-    // OFF: 전체 숨김
-    const showLayers = visible
-      ? [...EXPRESSWAY_LAYERS, ...STREETROAD_LAYERS]
-      : [];
-    const hideLayers = visible
-      ? LOCALROAD_LAYERS
-      : [...EXPRESSWAY_LAYERS, ...STREETROAD_LAYERS, ...LOCALROAD_LAYERS];
+    const style = map.getStyle();
+    if (!style?.layers) return;
 
-    for (const id of showLayers) {
-      if (!map.getLayer(id)) continue;
-      try { map.setLayoutProperty(id, 'visibility', 'visible'); } catch (_) {}
-    }
-    for (const id of hideLayers) {
-      if (!map.getLayer(id)) continue;
-      try { map.setLayoutProperty(id, 'visibility', 'none'); } catch (_) {}
-    }
-    // 도로명 레이어 항상 숨김 (도로 토글과 무관)
-    try {
-      const style = map.getStyle();
-      if (style?.layers) {
-        for (const layer of style.layers) {
-          if (isLabelLayer(layer.id) && isRoadLayer(layer.id)) {
-            map.setLayoutProperty(layer.id, 'visibility', 'none');
-          }
+    for (const layer of style.layers) {
+      const id = layer.id;
+      try {
+        // 도로명 텍스트 항상 숨김
+        if (isLabelLayer(id) && isRoadLayer(id)) {
+          map.setLayoutProperty(id, 'visibility', 'none');
+          continue;
         }
-      }
-    } catch (_) {}
+        // 도로 선 레이어만 처리
+        if (!isRoadLineLayer(id, layer.type)) continue;
+        const tier = getRoadTier(id);
+        if (!tier) continue;
+
+        // ON: expressway + street 표시, local 숨김
+        // OFF: 전체 숨김
+        const show = visible && (tier === 'expressway' || tier === 'street');
+        map.setLayoutProperty(id, 'visibility', show ? 'visible' : 'none');
+      } catch (_) {}
+    }
   } catch (e) {}
 }
 
@@ -696,33 +729,16 @@ function applyColors(map: mapboxgl.Map, colors: import('@/store/useMapStore').Co
       if (map.getLayer(id)) map.setPaintProperty(id, 'fill-color', colors.green);
     }
 
-    // ── 고속/간선도로 (A) — 벡터/위성 동일 ──
-    for (const id of EXPRESSWAY_LAYERS) {
-      if (!map.getLayer(id)) continue;
+    // ── 도로 컬러 — 패턴 기반으로 등급 분류하여 적용 (벡터/위성 공통) ──
+    for (const layer of style.layers) {
+      if (!isRoadLineLayer(layer.id, layer.type)) continue;
+      const tier = getRoadTier(layer.id);
+      if (!tier) continue;
       try {
-        const t = map.getLayer(id)?.type;
-        if (t === 'line') map.setPaintProperty(id, 'line-color', colors.expressway);
-        else if (t === 'fill') map.setPaintProperty(id, 'fill-color', colors.expressway);
-      } catch (_) {}
-    }
-
-    // ── 일반도로 (B) — 벡터/위성 동일 ──
-    for (const id of STREETROAD_LAYERS) {
-      if (!map.getLayer(id)) continue;
-      try {
-        const t = map.getLayer(id)?.type;
-        if (t === 'line') map.setPaintProperty(id, 'line-color', colors.streetroad);
-        else if (t === 'fill') map.setPaintProperty(id, 'fill-color', colors.streetroad);
-      } catch (_) {}
-    }
-
-    // ── 세부도로 (C) — 벡터/위성 동일 ──
-    for (const id of LOCALROAD_LAYERS) {
-      if (!map.getLayer(id)) continue;
-      try {
-        const t = map.getLayer(id)?.type;
-        if (t === 'line') map.setPaintProperty(id, 'line-color', colors.localroad);
-        else if (t === 'fill') map.setPaintProperty(id, 'fill-color', colors.localroad);
+        const color = tier === 'expressway' ? colors.expressway
+                    : tier === 'street'     ? colors.streetroad
+                    : colors.localroad;
+        map.setPaintProperty(layer.id, 'line-color', color);
       } catch (_) {}
     }
 
@@ -783,43 +799,32 @@ function initCustomLayers(map: mapboxgl.Map) {
   // 위성뷰 기본 도로가 너무 굵으므로 원래 대비 50% 수준으로 조절
   // Z5이하: 50%, Z5-7: 60%, Z7이후: 60% 유지, Z9 급증 억제
   const applyRoadWidthOverride = () => {
-    // A. 고속/간선도로 — z5이하 50%, z5-7 60%, z7+ 60%
-    for (const id of EXPRESSWAY_LAYERS) {
-      if (!map.getLayer(id)) continue;
+    const style = map.getStyle();
+    if (!style?.layers) return;
+    for (const layer of style.layers) {
+      if (!isRoadLineLayer(layer.id, layer.type)) continue;
+      const tier = getRoadTier(layer.id);
+      if (!tier) continue;
       try {
-        map.setPaintProperty(id, 'line-width', [
-          'interpolate', ['linear'], ['zoom'],
-          3,  0.5,
-          5,  0.8,
-          7,  1.2,
-          9,  1.2,  // z9 급증 억제
-          12, 1.6,
-        ]);
-      } catch (_) {}
-    }
-    // B. 일반도로 — z5-7 60%, z7+ 60% 유지
-    for (const id of STREETROAD_LAYERS) {
-      if (!map.getLayer(id)) continue;
-      try {
-        map.setPaintProperty(id, 'line-width', [
-          'interpolate', ['linear'], ['zoom'],
-          5,  0.5,
-          7,  0.8,
-          9,  0.8,  // z9 급증 억제
-          12, 1.2,
-        ]);
-      } catch (_) {}
-    }
-    // C. 세부도로 — 동일 기준
-    for (const id of LOCALROAD_LAYERS) {
-      if (!map.getLayer(id)) continue;
-      try {
-        map.setPaintProperty(id, 'line-width', [
-          'interpolate', ['linear'], ['zoom'],
-          7,  0.5,
-          9,  0.6,
-          12, 0.9,
-        ]);
+        if (tier === 'expressway') {
+          // A. z5이하 50%, z5-7 60%, z7+ 60%, z9 급증 억제
+          map.setPaintProperty(layer.id, 'line-width', [
+            'interpolate', ['linear'], ['zoom'],
+            3, 0.5, 5, 0.8, 7, 1.2, 9, 1.2, 12, 1.6,
+          ]);
+        } else if (tier === 'street') {
+          // B. z5-7 60%, z9 급증 억제
+          map.setPaintProperty(layer.id, 'line-width', [
+            'interpolate', ['linear'], ['zoom'],
+            5, 0.5, 7, 0.8, 9, 0.8, 12, 1.2,
+          ]);
+        } else {
+          // C. 세부도로
+          map.setPaintProperty(layer.id, 'line-width', [
+            'interpolate', ['linear'], ['zoom'],
+            7, 0.4, 9, 0.5, 12, 0.8,
+          ]);
+        }
       } catch (_) {}
     }
   };
