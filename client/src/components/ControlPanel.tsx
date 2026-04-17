@@ -50,7 +50,7 @@ function PanelSectionDivider() {
   );
 }
 
-const PANEL_WIDTH = 350; // px — 고정 너비
+const PANEL_WIDTH = '350px'; // 고정 너비
 
 export function ControlPanel() {
   const { panelVisible, setPanelVisible } = useMapStore();
@@ -103,7 +103,7 @@ export function ControlPanel() {
           zIndex: 10,
           display: 'flex',
           flexDirection: 'column',
-          transform: panelVisible ? 'translateX(0)' : `translateX(${PANEL_WIDTH}px)`,
+          transform: panelVisible ? 'translateX(0)' : `translateX(${PANEL_WIDTH})`,
           transition: 'transform 0.28s cubic-bezier(0.4,0,0.2,1)',
         }}
       >
