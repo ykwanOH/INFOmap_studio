@@ -51,74 +51,73 @@ function applySchemeToMini(
   map: mapboxgl.Map,
   scheme: MapToastScheme,
   showRoads: boolean,
-  borderColor?: string, // Border & Marker에서 설정한 국경 색상
+  borderColor?: string,
+  borderWidth?: number,
 ) {
   const cfg = SCHEME_CONFIGS[scheme];
+  const bColor = borderColor || cfg.border;
+  const bWidth = borderWidth ?? 1.5;
+  // 본지도와 동일한 줌 기준 굵기
+  const bWidthExpr: mapboxgl.Expression = ['interpolate', ['linear'], ['zoom'],
+    3, bWidth * 0.6, 6, bWidth, 10, bWidth * 1.4,
+  ];
   const layers = map.getStyle()?.layers || [];
 
   for (const layer of layers) {
     const { id, type } = layer;
     try {
-      // symbol 레이어 전체 숨김 (지명, POI, 도로번호 등)
       if (type === 'symbol') { map.setLayoutProperty(id, 'visibility', 'none'); continue; }
 
-      // 배경
       if (type === 'background') { map.setPaintProperty(id, 'background-color', cfg.water); continue; }
 
-      // 대지
       if (LAND_IDS.includes(id) && type === 'fill') {
         map.setPaintProperty(id, 'fill-color', cfg.land);
         map.setPaintProperty(id, 'fill-opacity', 1);
         continue;
       }
 
-      // 녹지 — 대지와 동일색
       if (GREEN_IDS.includes(id) && type === 'fill') {
         map.setPaintProperty(id, 'fill-color', cfg.land);
         map.setPaintProperty(id, 'fill-opacity', 1);
         continue;
       }
 
-      // 수계 fill
       if (WATER_IDS.includes(id) && type === 'fill') {
         map.setPaintProperty(id, 'fill-color', cfg.water);
         continue;
       }
 
-      // 수계 line
       if ((id === 'waterway' || id.includes('waterway')) && type === 'line') {
         map.setLayoutProperty(id, 'visibility', 'visible');
         map.setPaintProperty(id, 'line-color', cfg.water);
         continue;
       }
 
-      // C. 국경 (Mapbox 기본) — 항상 표시
+      // C. 국경 (Mapbox 기본) — 색상·굵기 모두 반영
       if (BORDER_IDS.includes(id) && type === 'line') {
         map.setLayoutProperty(id, 'visibility', 'visible');
-        map.setPaintProperty(id, 'line-color', borderColor || cfg.border);
-        map.setPaintProperty(id, 'line-width', 1.2);
+        map.setPaintProperty(id, 'line-color', bColor);
+        map.setPaintProperty(id, 'line-width', bWidthExpr);
         continue;
       }
 
-      // 커스텀 국경 레이어 (macro-admin-*)
+      // 커스텀 국경 레이어 — 색상·굵기 모두 반영
       if (CUSTOM_BORDER_IDS.includes(id)) {
-        // country 레이어만 표시, 나머지는 숨김
         if (id === 'macro-admin-country') {
           map.setLayoutProperty(id, 'visibility', 'visible');
-          map.setPaintProperty(id, 'line-color', borderColor || cfg.border);
+          map.setPaintProperty(id, 'line-color', bColor);
+          map.setPaintProperty(id, 'line-width', bWidthExpr);
         } else {
           map.setLayoutProperty(id, 'visibility', 'none');
         }
         continue;
       }
 
-      // 도로 — 토글 따름
       if (type === 'line' && (id.startsWith('road-') || id.startsWith('bridge-') || id.startsWith('tunnel-'))) {
         map.setLayoutProperty(id, 'visibility', showRoads ? 'visible' : 'none');
         continue;
       }
 
-      // 나머지 모든 레이어 숨김 (건물, POI fill, 교통 등)
       if (!LAND_IDS.includes(id) && !GREEN_IDS.includes(id) && !WATER_IDS.includes(id) &&
           !BORDER_IDS.includes(id) && !CUSTOM_BORDER_IDS.includes(id) &&
           type !== 'background') {
@@ -159,7 +158,7 @@ export function MapToastPanel() {
     mini.on('load', () => {
       miniLoadedRef.current = true;
       const store = useMapStore.getState();
-      applySchemeToMini(mini, store.mapToastScheme, store.showRoads, store.borders.country.color);
+      applySchemeToMini(mini, store.mapToastScheme, store.showRoads, store.borders.country.color, store.borders.country.width);
     });
     miniMapRef.current = mini;
     return () => {
@@ -173,7 +172,7 @@ export function MapToastPanel() {
   useEffect(() => {
     const mini = miniMapRef.current;
     if (!mini || !miniLoadedRef.current) return;
-    applySchemeToMini(mini, mapToastScheme, showRoads, borders.country.color);
+    applySchemeToMini(mini, mapToastScheme, showRoads, borders.country.color, borders.country.width);
   }, [mapToastScheme, showRoads, borders]);
 
   // ── A. 동기화: 메인맵 이동·pitch 따라감 ──────────────────────────────────
