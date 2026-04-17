@@ -782,9 +782,10 @@ function applyColors(map: mapboxgl.Map, colors: import('@/store/useMapStore').Co
                     : tier === 'street'     ? colors.streetroad
                     : null;
         if (!color) continue;
+        console.log(`[color] ${layer.id} tier=${tier} color=${color}`);
         map.setPaintProperty(layer.id, 'line-color', color);
         map.setPaintProperty(layer.id, 'line-opacity', 1);
-      } catch (_) {}
+      } catch (e) { console.error(`[color ERR] ${layer.id}`, e); }
     }
 
     // ── 경계선은 Border & Marker 패널의 borders 상태가 직접 제어 ──
