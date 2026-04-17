@@ -1,0 +1,466 @@
+/* ============================================================
+   MACRO Map Studio — Design System
+   Reference: 3D Miniature Map Studio (sibling app)
+   Panel bg: near-white warm (#f9f7f4), border: #e0dbd4
+   Font: DM Sans (UI labels), DM Mono (values/section titles)
+   Panel width: 350px (fixed right panel)
+   Section header: 11px DM Mono uppercase, 10px 14px padding
+   Slider: 2px track, 14px thumb, dark charcoal
+   Toggle: 36x20px pill
+   ============================================================ */
+
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "mapbox-gl/dist/mapbox-gl.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+  --radius-xl: calc(var(--radius) + 6px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+}
+
+:root {
+  /* ── Core palette (warm off-white, matches sibling app) ── */
+  --radius: 0px;
+  --background: oklch(97.5% 0.005 75);
+  --foreground: oklch(16% 0.008 60);
+  --card: oklch(97.5% 0.005 75);
+  --card-foreground: oklch(16% 0.008 60);
+  --popover: oklch(97.5% 0.005 75);
+  --popover-foreground: oklch(16% 0.008 60);
+  --primary: oklch(25% 0.015 240);
+  --primary-foreground: oklch(97.5% 0.005 75);
+  --secondary: oklch(94% 0.006 70);
+  --secondary-foreground: oklch(25% 0.015 240);
+  --muted: oklch(92% 0.006 70);
+  --muted-foreground: oklch(50% 0.010 60);
+  --accent: oklch(40% 0.07 145);
+  --accent-foreground: oklch(97.5% 0.005 75);
+  --destructive: oklch(57.7% 0.245 27.325);
+  --destructive-foreground: oklch(98.5% 0 0);
+  --border: oklch(87% 0.008 70);
+  --input: oklch(87% 0.008 70);
+  --ring: oklch(40% 0.07 145);
+
+  /* ── App-specific tokens (matches sibling app pixel-precisely) ── */
+  --glass-bg: rgba(249, 247, 244, 0.97);
+  --glass-border: #e0dbd4;
+  --panel-width: 350px;
+  --section-label-color: #5a5550;
+  --section-header-bg: #f9f7f4;
+  --toggle-off: #c8c3bc;
+  --toggle-on: #2a5c2e;
+  --slider-track: #d8d3cc;
+  --slider-thumb: #3a3530;
+  --value-color: #3a3530;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+  }
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  [type="button"]:not(:disabled),
+  [type="submit"]:not(:disabled),
+  [type="reset"]:not(:disabled),
+  a[href],
+  select:not(:disabled),
+  input[type="checkbox"]:not(:disabled),
+  input[type="radio"]:not(:disabled) {
+    @apply cursor-pointer;
+  }
+}
+
+@layer components {
+  .container {
+    width: 100%;
+    margin-left: auto;
+    margin-right: auto;
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  .flex {
+    min-height: 0;
+    min-width: 0;
+  }
+
+  /* ── Glass Panel ── */
+  .glass-panel {
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    box-shadow: 0 2px 16px rgba(0,0,0,0.10), 0 1px 4px rgba(0,0,0,0.06);
+  }
+
+  /* ── Section Label (uppercase mono, matches sibling) ── */
+  .section-label {
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--section-label-color);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.2;
+  }
+
+  /* ── Custom Slider (matches sibling: thin track, round thumb) ── */
+  .custom-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    cursor: pointer;
+    background: var(--slider-track);
+    border-radius: 1px;
+    outline: none;
+    width: 100%;
+    height: 2px;
+    display: block;
+  }
+  .custom-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--slider-thumb);
+    cursor: pointer;
+    border: none;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+    margin-top: -6px;
+  }
+  .custom-slider::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--slider-thumb);
+    cursor: pointer;
+    border: none;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+  }
+  .custom-slider::-webkit-slider-runnable-track {
+    height: 2px;
+    background: var(--slider-track);
+    border-radius: 1px;
+  }
+
+  /* ── Toggle Switch (36x20, matches sibling) ── */
+  .toggle-switch {
+    width: 36px;
+    height: 20px;
+    display: inline-block;
+    position: relative;
+    flex-shrink: 0;
+  }
+  .toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+    position: absolute;
+  }
+  .toggle-slider {
+    cursor: pointer;
+    background: var(--toggle-off);
+    border-radius: 10px;
+    transition: background 0.18s;
+    position: absolute;
+    inset: 0;
+  }
+  .toggle-slider::before {
+    content: '';
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    left: 2px;
+    top: 2px;
+    background: white;
+    border-radius: 50%;
+    transition: transform 0.18s;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.20);
+  }
+  .toggle-switch input:checked + .toggle-slider {
+    background: var(--toggle-on);
+  }
+  .toggle-switch input:checked + .toggle-slider::before {
+    transform: translateX(16px);
+  }
+
+  /* ── Panel Scrollbar ── */
+  .panel-scroll::-webkit-scrollbar {
+    width: 3px;
+  }
+  .panel-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .panel-scroll::-webkit-scrollbar-thumb {
+    background: var(--glass-border);
+    border-radius: 2px;
+  }
+
+  /* ── Mapbox overrides ── */
+  .mapboxgl-ctrl-attrib {
+    display: none !important;
+  }
+  .mapboxgl-ctrl-logo {
+    display: none !important;
+  }
+  .mapboxgl-canvas {
+    outline: none;
+  }
+  .mapboxgl-ctrl-group {
+    display: none !important;
+  }
+
+  /* ── Accordion section header (matches sibling: 10px 14px padding) ── */
+  .section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    cursor: pointer;
+    user-select: none;
+    background: var(--section-header-bg);
+    border-bottom: 1px solid var(--glass-border);
+    transition: background 0.1s;
+  }
+  .section-header:hover {
+    background: rgba(0,0,0,0.02);
+  }
+
+  /* ── Color swatch ── */
+  .color-swatch {
+    width: 18px;
+    height: 18px;
+    border-radius: 2px;
+    border: 1px solid var(--glass-border);
+    cursor: pointer;
+    flex-shrink: 0;
+    display: block;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* ── Small action button (matches sibling: RESET LIGHT style) ── */
+  .action-btn {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 5px 12px;
+    border: 1px solid var(--glass-border);
+    background: transparent;
+    color: var(--section-label-color);
+    border-radius: 0px;
+    transition: all 0.12s;
+    cursor: pointer;
+    line-height: 1.2;
+  }
+  .action-btn:hover {
+    background: rgba(0,0,0,0.04);
+    color: var(--foreground);
+  }
+  .action-btn.active {
+    background: var(--primary);
+    color: var(--primary-foreground);
+    border-color: var(--primary);
+  }
+  .action-btn.danger {
+    color: #b84040;
+    border-color: #d4a0a0;
+  }
+  .action-btn.danger:hover {
+    background: #fdf0f0;
+  }
+
+  /* ── View mode button (3D CAM / 2D CAM style from sibling) ── */
+  .view-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 7px 8px;
+    border: 1px solid var(--glass-border);
+    background: transparent;
+    color: var(--section-label-color);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    border-radius: 0px;
+    transition: all 0.12s;
+    cursor: pointer;
+    line-height: 1.2;
+  }
+  .view-btn.active {
+    background: var(--primary);
+    color: var(--primary-foreground);
+    border-color: var(--primary);
+  }
+  .view-btn:hover:not(.active) {
+    background: rgba(0,0,0,0.04);
+    color: var(--foreground);
+  }
+
+  /* ── Map thumbnail button ── */
+  .map-thumb-btn {
+    flex: 1;
+    border-radius: 0px;
+    border: 2px solid transparent;
+    overflow: hidden;
+    cursor: pointer;
+    transition: border-color 0.12s;
+    position: relative;
+    background: none;
+    padding: 0;
+  }
+  .map-thumb-btn.active {
+    border-color: var(--primary);
+  }
+  .map-thumb-btn:hover:not(.active) {
+    border-color: var(--glass-border);
+  }
+
+  /* ── Divider ── */
+  .panel-divider {
+    height: 1px;
+    background: var(--glass-border);
+    margin: 0;
+  }
+
+  /* ── Zoom badge (matches sibling: right-aligned mono value) ── */
+  .zoom-badge {
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--value-color);
+    letter-spacing: 0.04em;
+  }
+
+  /* ── Value readout (right-aligned numbers like "1.0", "50%") ── */
+  .value-readout {
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--value-color);
+    letter-spacing: 0.04em;
+    min-width: 36px;
+    text-align: right;
+  }
+
+  /* ── Text input (search/geocode fields) ── */
+  .text-input {
+    width: 100%;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 12px;
+    padding: 5px 8px;
+    border: 1px solid var(--glass-border);
+    border-radius: 0px;
+    background: white;
+    color: var(--foreground);
+    outline: none;
+    transition: border-color 0.12s;
+    line-height: 1.3;
+  }
+  .text-input:focus {
+    border-color: var(--primary);
+  }
+  .text-input::placeholder {
+    color: var(--muted-foreground);
+    opacity: 0.7;
+  }
+
+  /* ── Geocode suggestion dropdown ── */
+  .suggestion-list {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: 0px;
+    margin-top: 1px;
+    max-height: 140px;
+    overflow-y: auto;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+  }
+  .suggestion-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 5px 8px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 11px;
+    color: var(--foreground);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: background 0.1s;
+    border-bottom: 1px solid var(--glass-border);
+    line-height: 1.3;
+  }
+  .suggestion-item:last-child {
+    border-bottom: none;
+  }
+  .suggestion-item:hover {
+    background: rgba(0,0,0,0.04);
+  }
+
+  /* ── Full-width reset/action button (like RESET LIGHT in sibling) ── */
+  .full-action-btn {
+    display: block;
+    width: 100%;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 8px 14px;
+    border: 1px solid var(--glass-border);
+    background: transparent;
+    color: var(--section-label-color);
+    border-radius: 0px;
+    transition: all 0.12s;
+    cursor: pointer;
+    text-align: center;
+    line-height: 1.2;
+  }
+  .full-action-btn:hover {
+    background: rgba(0,0,0,0.04);
+    color: var(--foreground);
+  }
+  .full-action-btn.active {
+    background: var(--primary);
+    color: var(--primary-foreground);
+    border-color: var(--primary);
+  }
+}
