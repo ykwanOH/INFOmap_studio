@@ -2,7 +2,7 @@
  * MACRO Map Studio — MapView Component (v3)
  * - 시작점: 한국(127.5, 36.5), zoom 4.5, 2D CAM (pitch:0)
  * - showLabels / showRoads 토글 반영
- * - 새 ColorConfig: landmass/hydro/green/expressway/localroad/boundary
+ * - 새 ColorConfig: landmass/hydro/green/expressway/streetroad
  * - 도로 레이어 컬러 실시간 반영
  * - Extra Look CSS filter overlay
  */
@@ -61,15 +61,15 @@ function isRoadCaseLayer(id: string): boolean {
 }
 
 // 레이어 ID로 도로 등급 판별
-// ★ 체크 순서: secondary/tertiary → motorway/trunk/primary → street → local
-//    이유: 'bridge-primary-secondary-tertiary'는 secondary가 포함되어 있으므로
-//          primary보다 먼저 secondary를 체크해야 street으로 올바르게 분류됨
+// ★ 체크 순서: secondary/tertiary/primary → motorway/trunk → street → local
+//    expressway = motorway + trunk 만 (고속도로·국도급)
+//    streetroad = primary + secondary + tertiary + street + residential (주요간선~일반도로)
 function getRoadTier(id: string): 'expressway' | 'street' | 'local' | null {
   const lower = id.toLowerCase();
-  // ① secondary / tertiary 먼저 → 복합 ID에서 primary보다 우선
-  if (lower.includes('secondary') || lower.includes('tertiary')) return 'street';
-  // ② expressway 계열
-  if (lower.includes('motorway') || lower.includes('trunk') || lower.includes('primary')) return 'expressway';
+  // ① street 계열 먼저 — primary 포함, 복합 ID(bridge-primary-secondary-tertiary) 모두 포함
+  if (lower.includes('primary') || lower.includes('secondary') || lower.includes('tertiary')) return 'street';
+  // ② expressway = motorway + trunk 만
+  if (lower.includes('motorway') || lower.includes('trunk')) return 'expressway';
   // ③ 일반도로
   if (lower.includes('street') || lower.includes('residential')) return 'street';
   // ④ 세부도로
@@ -128,11 +128,18 @@ export default function MapView() {
       // 초기 2D CAM: pitch 고정 (직부감)
       map.dragRotate.disable();
       map.touchZoomRotate.disableRotation();
-      // 스타일 로드 후 현재 코로 상태 즉시 적용
+      // 스타일 로드 후 현재 상태 즉시 적용
       const store = useMapStore.getState();
       applyColors(map, store.colors);
       applyLabelVisibility(map, store.showLabels);
       applyRoadVisibility(map, store.showRoads);
+      // ★ idle 후 재적용: 'load' 직후 일부 레이어가 아직 초기화 중일 수 있어
+      //   setLayoutProperty가 silently fail하는 경우를 보완.
+      //   idle = 타일/레이어가 모두 준비되어 렌더링이 완전히 안정된 시점.
+      map.once('idle', () => {
+        applyColors(map, store.colors);
+        applyRoadVisibility(map, store.showRoads);
+      });
       setMapInstance(map);
     });
     map.on('zoom', () => setZoom(parseFloat(map.getZoom().toFixed(2))));
@@ -163,6 +170,12 @@ export default function MapView() {
       if (mapStyle === 'satellite') {
         applyRoadWidthOverride(map);
       }
+      // ★ idle 후 재적용: 스타일 전환 직후 레이어가 완전히 초기화되지 않은 경우 보완
+      map.once('idle', () => {
+        applyColors(map, store.colors);
+        applyRoadVisibility(map, store.showRoads);
+        if (mapStyle === 'satellite') applyRoadWidthOverride(map);
+      });
     });
   }, [mapStyle]);
 
@@ -187,6 +200,10 @@ export default function MapView() {
     const map = mapRef.current;
     if (!map || !styleLoadedRef.current) return;
     applyColors(map, colors);
+    // 색 적용 후 visibility 재동기화:
+    // 'load'/'style.load' 직후 타이밍에 setLayoutProperty가 실패(catch 무시)한 경우를 보완.
+    // applyColors가 레이어를 건드린 직후 visibility를 재확인하면 항상 올바른 상태가 됨.
+    applyRoadVisibility(map, showRoads);
   }, [colors]);
 
   // ── Label visibility ──────────────────────────────────────────────────────────
@@ -633,6 +650,8 @@ function applyRoadWidthOverride(map: mapboxgl.Map) {
             'interpolate', ['linear'], ['zoom'],
             5, 0.5, 7, 0.8, 9, 0.8, 12, 1.2,
           ]);
+          // ★ 일반도로 opacity 제거 — 케이싱 없이도 선명하게 표시
+          map.setPaintProperty(layer.id, 'line-opacity', 1);
         } else {
           map.setPaintProperty(layer.id, 'line-width', [
             'interpolate', ['linear'], ['zoom'],
@@ -752,7 +771,8 @@ function applyColors(map: mapboxgl.Map, colors: import('@/store/useMapStore').Co
       try {
         const color = tier === 'expressway' ? colors.expressway
                     : tier === 'street'     ? colors.streetroad
-                    : colors.localroad;
+                    : null; // local tier는 visibility=none이므로 색 적용 불필요
+        if (!color) continue;
         map.setPaintProperty(layer.id, 'line-color', color);
       } catch (_) {}
     }
@@ -828,11 +848,12 @@ function initCustomLayers(map: mapboxgl.Map) {
             3, 0.5, 5, 0.8, 7, 1.2, 9, 1.2, 12, 1.6,
           ]);
         } else if (tier === 'street') {
-          // B. z5-7 60%, z9 급증 억제
+          // B. z5-7 60%, z9 급증 억제 + opacity 완전 불투명
           map.setPaintProperty(layer.id, 'line-width', [
             'interpolate', ['linear'], ['zoom'],
             5, 0.5, 7, 0.8, 9, 0.8, 12, 1.2,
           ]);
+          map.setPaintProperty(layer.id, 'line-opacity', 1);
         } else {
           // C. 세부도로
           map.setPaintProperty(layer.id, 'line-width', [
