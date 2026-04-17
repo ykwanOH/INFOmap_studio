@@ -12,8 +12,8 @@ const COLOR_LABELS: { key: keyof ColorConfig; label: string }[] = [
   { key: 'landmass',   label: '대지' },
   { key: 'hydro',      label: '수계' },
   { key: 'green',      label: '녹지' },
-  { key: 'expressway', label: '고속도로' },
-  { key: 'streetroad', label: '일반도로' },
+  { key: 'expressway', label: '고속·주간선 도로' },
+  { key: 'streetroad', label: '집산·일반도로' },
 ];
 
 export function ColorPanel() {

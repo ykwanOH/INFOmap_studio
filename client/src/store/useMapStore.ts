@@ -22,8 +22,8 @@ export interface ColorConfig {
   landmass: string;    // 대지
   hydro: string;       // 수계
   green: string;       // 녹지
-  expressway: string;  // 고속도로 (motorway, trunk)
-  streetroad: string;  // 일반도로 (primary, secondary, tertiary, residential)
+  expressway: string;  // 고속·주간선 도로 (motorway, trunk, primary)
+  streetroad: string;  // 집산·일반도로 (secondary, tertiary, street, residential)
 }
 
 export interface BorderConfig {

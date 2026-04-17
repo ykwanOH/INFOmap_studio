@@ -61,26 +61,22 @@ function isRoadCaseLayer(id: string): boolean {
 }
 
 // 레이어 ID로 도로 등급 판별
-// ★ 체크 순서: secondary/tertiary/primary → motorway/trunk → street → simple → local
-//    expressway = motorway + trunk
-//    streetroad = primary + secondary + tertiary + street + residential + simple
-//    (satellite-streets에서 road-simple은 모든 주요도로 통합 레이어 → street으로 처리)
+// expressway = motorway + trunk + primary (bridge/tunnel 포함)
+// streetroad = secondary + tertiary + street + residential + simple
+// local      = minor, path, steps, service, pedestrian 등
 function getRoadTier(id: string): 'expressway' | 'street' | 'local' | null {
   const lower = id.toLowerCase();
-  // ① street 계열 — primary 포함, 복합 ID도 포함
-  if (lower.includes('primary') || lower.includes('secondary') || lower.includes('tertiary')) return 'street';
-  // ② expressway = motorway + trunk
-  if (lower.includes('motorway') || lower.includes('trunk')) return 'expressway';
-  // ③ 일반도로
-  if (lower.includes('street') || lower.includes('residential')) return 'street';
-  // ④ simple = satellite-streets의 통합 도로 레이어 → street으로 처리
-  //    (road-simple, bridge-simple, tunnel-simple, bridge-case-simple)
-  if (lower.includes('simple')) return 'street';
-  // ⑤ 세부도로
+  // ① expressway: motorway, trunk, primary
+  if (lower.includes('motorway') || lower.includes('trunk') || lower.includes('primary')) return 'expressway';
+  // ② streetroad: secondary, tertiary, street, residential, simple
+  if (lower.includes('secondary') || lower.includes('tertiary') ||
+      lower.includes('street') || lower.includes('residential') ||
+      lower.includes('simple')) return 'street';
+  // ③ local
   if (lower.includes('minor') || lower.includes('path') || lower.includes('steps') ||
       lower.includes('service') || lower.includes('pedestrian') || lower.includes('ferry') ||
       lower.includes('rail') || lower.includes('cycleway') || lower.includes('trail') || lower.includes('piste')) return 'local';
-  // ⑥ 그 외 road- bridge- tunnel- 은 local
+  // ④ 나머지 road- bridge- tunnel-
   if (lower.startsWith('road-') || lower.startsWith('bridge-') || lower.startsWith('tunnel-')) return 'local';
   return null;
 }
@@ -648,18 +644,18 @@ function applyRoadWidthOverride(map: mapboxgl.Map) {
         if (tier === 'expressway') {
           map.setPaintProperty(layer.id, 'line-width', [
             'interpolate', ['linear'], ['zoom'],
-            3, 0.2, 5, 0.35, 7, 0.55, 9, 0.7, 12, 1.0, 15, 1.25,
+            3, 0.12, 5, 0.21, 7, 0.33, 9, 0.42, 12, 0.6, 15, 0.75,
           ]);
         } else if (tier === 'street') {
           map.setPaintProperty(layer.id, 'line-width', [
             'interpolate', ['linear'], ['zoom'],
-            5, 0.2, 7, 0.35, 9, 0.42, 12, 0.63, 15, 0.84,
+            5, 0.14, 7, 0.25, 9, 0.29, 12, 0.44, 15, 0.59,
           ]);
           map.setPaintProperty(layer.id, 'line-opacity', 1);
         } else {
           map.setPaintProperty(layer.id, 'line-width', [
             'interpolate', ['linear'], ['zoom'],
-            7, 0.14, 9, 0.21, 12, 0.35,
+            7, 0.1, 9, 0.15, 12, 0.25,
           ]);
         }
       } catch (_) {}
@@ -778,9 +774,7 @@ function applyColors(map: mapboxgl.Map, colors: import('@/store/useMapStore').Co
       if (!tier) continue;
       try {
         const color = tier === 'expressway' ? colors.expressway
-                    : tier === 'street'     ? colors.streetroad
-                    : null;
-        if (!color) continue;
+                    : colors.streetroad; // street + local 모두 일반도로 색
         map.setPaintProperty(layer.id, 'line-color', color);
         map.setPaintProperty(layer.id, 'line-opacity', 1);
       } catch (_) {}
