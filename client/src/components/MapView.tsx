@@ -239,6 +239,7 @@ export default function MapView() {
     const countryLayerId = 'macro-admin-country';
     if (!map.getLayer(countryLayerId)) {
       const src = findVectorSource(map);
+      console.log('[border] vector source:', src, '/ available:', Object.keys(map.getStyle()?.sources || {}));
       if (src) {
         try {
           map.addLayer({
@@ -794,7 +795,11 @@ function applyColors(map: mapboxgl.Map, colors: import('@/store/useMapStore').Co
 
 function findVectorSource(map: mapboxgl.Map): string | null {
   const sources = map.getStyle()?.sources || {};
-  if (sources['composite']) return 'composite';
+  // 알려진 Mapbox 스타일 source 우선순위
+  for (const name of ['composite', 'mapbox', 'mapbox-streets']) {
+    if (sources[name]) return name;
+  }
+  // 그 외 vector source 탐색
   return Object.keys(sources).find((k) => (sources[k] as any).type === 'vector') ?? null;
 }
 
