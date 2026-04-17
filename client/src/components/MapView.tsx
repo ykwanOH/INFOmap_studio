@@ -146,9 +146,6 @@ export default function MapView() {
     });
     map.on('zoom', () => {
       setZoom(parseFloat(map.getZoom().toFixed(2)));
-      // 줌 변경 시 도로 등장/소멸 기준 재적용
-      const store = useMapStore.getState();
-      if (styleLoadedRef.current) applyRoadVisibility(map, store.showRoads);
     });
     mapRef.current = map;
     return () => {
@@ -647,21 +644,20 @@ function applyRoadWidthOverride(map: mapboxgl.Map) {
       if (!tier) continue;
       try {
         if (tier === 'expressway') {
-          // 이전 값의 75%
           map.setPaintProperty(layer.id, 'line-width', [
             'interpolate', ['linear'], ['zoom'],
-            3, 0.09, 5, 0.16, 7, 0.25, 9, 0.32, 12, 0.45, 15, 0.56,
+            7, 0.09, 9, 0.32, 12, 0.45, 15, 0.56,
           ]);
         } else if (tier === 'street') {
           map.setPaintProperty(layer.id, 'line-width', [
             'interpolate', ['linear'], ['zoom'],
-            11, 0, 12.5, 0.29, 14, 0.44, 15, 0.59,
+            12.5, 0.29, 14, 0.44, 15, 0.59,
           ]);
           map.setPaintProperty(layer.id, 'line-opacity', 1);
         } else {
           map.setPaintProperty(layer.id, 'line-width', [
             'interpolate', ['linear'], ['zoom'],
-            11, 0, 12.5, 0.15, 14, 0.25,
+            12.5, 0.15, 14, 0.25,
           ]);
         }
       } catch (_) {}
@@ -694,7 +690,6 @@ function applyRoadVisibility(map: mapboxgl.Map, visible: boolean) {
   try {
     const style = map.getStyle();
     if (!style?.layers) return;
-    const zoom = map.getZoom();
 
     for (const layer of style.layers) {
       const id = layer.id;
@@ -707,12 +702,21 @@ function applyRoadVisibility(map: mapboxgl.Map, visible: boolean) {
         const tier = getRoadTier(id);
         if (!tier) continue;
 
-        // expressway: zoom 7 이상, street/local: zoom 12.5 이상
-        const zoomOk = tier === 'expressway' ? zoom >= 7 : zoom >= 12.5;
-        const show = visible && (tier === 'expressway' || tier === 'street') && zoomOk;
+        if (!visible) {
+          map.setLayoutProperty(id, 'visibility', 'none');
+          continue;
+        }
 
         map.setLayoutProperty(id, 'visibility', 'visible');
-        map.setPaintProperty(id, 'line-opacity', show ? 1 : 0);
+
+        // ★ minzoom 직접 설정 — 근본적인 줌 레벨 제어
+        // expressway: zoom 7 미만 숨김
+        // street/local: zoom 12.5 미만 숨김
+        if (tier === 'expressway') {
+          map.setLayerZoomRange(id, 7, 24);
+        } else {
+          map.setLayerZoomRange(id, 12.5, 24);
+        }
       } catch (e) {}
     }
   } catch (e) {}
