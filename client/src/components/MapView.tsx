@@ -648,18 +648,18 @@ function applyRoadWidthOverride(map: mapboxgl.Map) {
         if (tier === 'expressway') {
           map.setPaintProperty(layer.id, 'line-width', [
             'interpolate', ['linear'], ['zoom'],
-            3, 0.3, 5, 0.5, 7, 0.8, 9, 1.0, 12, 1.4, 15, 1.8,
+            3, 0.2, 5, 0.35, 7, 0.55, 9, 0.7, 12, 1.0, 15, 1.25,
           ]);
         } else if (tier === 'street') {
           map.setPaintProperty(layer.id, 'line-width', [
             'interpolate', ['linear'], ['zoom'],
-            5, 0.3, 7, 0.5, 9, 0.6, 12, 0.9, 15, 1.2,
+            5, 0.2, 7, 0.35, 9, 0.42, 12, 0.63, 15, 0.84,
           ]);
           map.setPaintProperty(layer.id, 'line-opacity', 1);
         } else {
           map.setPaintProperty(layer.id, 'line-width', [
             'interpolate', ['linear'], ['zoom'],
-            7, 0.2, 9, 0.3, 12, 0.5,
+            7, 0.14, 9, 0.21, 12, 0.35,
           ]);
         }
       } catch (_) {}
