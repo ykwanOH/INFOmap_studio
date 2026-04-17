@@ -61,21 +61,25 @@ function isRoadCaseLayer(id: string): boolean {
 }
 
 // 레이어 ID로 도로 등급 판별
-// ★ 체크 순서: secondary/tertiary/primary → motorway/trunk → street → local
-//    expressway = motorway + trunk 만 (고속도로·국도급)
-//    streetroad = primary + secondary + tertiary + street + residential (주요간선~일반도로)
+// ★ 체크 순서: secondary/tertiary/primary → motorway/trunk → street → simple → local
+//    expressway = motorway + trunk + simple (light-v11은 주요도로를 'simple'로 통합)
+//    streetroad = primary + secondary + tertiary + street + residential
 function getRoadTier(id: string): 'expressway' | 'street' | 'local' | null {
   const lower = id.toLowerCase();
-  // ① street 계열 먼저 — primary 포함, 복합 ID(bridge-primary-secondary-tertiary) 모두 포함
+  // ① street 계열 — primary 포함, 복합 ID도 포함
   if (lower.includes('primary') || lower.includes('secondary') || lower.includes('tertiary')) return 'street';
-  // ② expressway = motorway + trunk 만
+  // ② expressway = motorway + trunk
   if (lower.includes('motorway') || lower.includes('trunk')) return 'expressway';
   // ③ 일반도로
   if (lower.includes('street') || lower.includes('residential')) return 'street';
-  // ④ 세부도로
+  // ④ light-v11 전용: 'simple' = 고속/주요도로 통합 레이어 → expressway로 처리
+  //    (road-simple, bridge-simple, tunnel-simple, bridge-case-simple)
+  if (lower.includes('simple')) return 'expressway';
+  // ⑤ 세부도로
   if (lower.includes('minor') || lower.includes('path') || lower.includes('steps') ||
-      lower.includes('service') || lower.includes('pedestrian') || lower.includes('ferry')) return 'local';
-  // ⑤ 그 외 road- bridge- tunnel- 은 local로 처리
+      lower.includes('service') || lower.includes('pedestrian') || lower.includes('ferry') ||
+      lower.includes('rail') || lower.includes('cycleway') || lower.includes('trail') || lower.includes('piste')) return 'local';
+  // ⑥ 그 외 road- bridge- tunnel- 은 local
   if (lower.startsWith('road-') || lower.startsWith('bridge-') || lower.startsWith('tunnel-')) return 'local';
   return null;
 }
