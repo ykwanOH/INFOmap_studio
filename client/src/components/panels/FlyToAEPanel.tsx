@@ -16,6 +16,7 @@ const labelStyle = {
   color: 'var(--section-label-color)',
   fontWeight: 400,
   lineHeight: 1.2,
+  whiteSpace: 'nowrap' as const,
 };
 
 const ICON_OPTIONS: { key: RouteIconType; emoji: string; label: string }[] = [

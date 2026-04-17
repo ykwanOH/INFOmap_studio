@@ -15,6 +15,7 @@ const labelStyle = {
   color: 'var(--section-label-color)',
   fontWeight: 400,
   lineHeight: 1.2,
+  whiteSpace: 'nowrap' as const,
 };
 
 const LOOKS: { key: ExtraLookType; label: string; desc: string; preview: string }[] = [

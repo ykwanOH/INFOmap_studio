@@ -611,8 +611,7 @@ function applyLabelVisibility(map: mapboxgl.Map, visible: boolean) {
 
 function applyRoadVisibility(map: mapboxgl.Map, visible: boolean) {
   try {
-    const showLabels = useMapStore.getState().showLabels;
-    // EXPRESSWAY + LOCALROAD 배열 기반으로 통일 적용
+    // 도로 선 레이어만 토글 (EXPRESSWAY + LOCALROAD 배열 기반)
     const allRoadLayers = [...EXPRESSWAY_LAYERS, ...LOCALROAD_LAYERS];
     for (const id of allRoadLayers) {
       if (!map.getLayer(id)) continue;
@@ -620,13 +619,14 @@ function applyRoadVisibility(map: mapboxgl.Map, visible: boolean) {
         map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
       } catch (_) {}
     }
-    // 도로 레이블은 showLabels && showRoads 둘 다일 때만
+    // 도로명(road-label 등)은 도로 토글과 무관하게 항상 숨김
+    // 지역명 토글(showLabels)만 텍스트 레이어를 제어함
     try {
       const style = map.getStyle();
       if (style?.layers) {
         for (const layer of style.layers) {
           if (isLabelLayer(layer.id) && isRoadLayer(layer.id)) {
-            map.setLayoutProperty(layer.id, 'visibility', (visible && showLabels) ? 'visible' : 'none');
+            map.setLayoutProperty(layer.id, 'visibility', 'none');
           }
         }
       }
@@ -752,6 +752,43 @@ function initCustomLayers(map: mapboxgl.Map) {
         'fill-extrusion-opacity': 0.7,
       },
     });
+  }
+
+  // ── 위성뷰 도로 굵기 override ─────────────────────────────────────────
+  // 위성뷰 기본 도로가 너무 굵으므로 줌 단계별로 조절
+  // Z5 이하: 70%, Z5-7: 75%, Z7+: 75% 유지, Z9 이후 급격한 굵기 증가 억제
+  const applyRoadWidthOverride = () => {
+    // 고속/간선도로 (motorway, trunk, primary)
+    for (const id of EXPRESSWAY_LAYERS) {
+      if (!map.getLayer(id)) continue;
+      try {
+        map.setPaintProperty(id, 'line-width', [
+          'interpolate', ['linear'], ['zoom'],
+          3,  1.0,   // z3: 기본 대비 70%
+          5,  1.4,   // z5: 70% 수준
+          7,  2.1,   // z7: 75% 수준
+          9,  2.8,   // z9: z7과 유사하게 억제
+          12, 3.5,   // z12+: 완만하게 증가
+        ]);
+      } catch (_) {}
+    }
+    // 국지/로컬 도로 (secondary 이하)
+    for (const id of LOCALROAD_LAYERS) {
+      if (!map.getLayer(id)) continue;
+      try {
+        map.setPaintProperty(id, 'line-width', [
+          'interpolate', ['linear'], ['zoom'],
+          5,  0.6,
+          7,  1.0,
+          9,  1.2,   // z9 급증 억제 — z7과 유사하게
+          12, 1.8,
+        ]);
+      } catch (_) {}
+    }
+  };
+  // style.load 이후에 적용 (현재 스타일이 satellite일 때만)
+  if (map.getStyle()?.name?.toLowerCase().includes('satellite')) {
+    applyRoadWidthOverride();
   }
 
   // ── 한국 행정구역 GeoJSON (lazy load) ──────────────────────────────────

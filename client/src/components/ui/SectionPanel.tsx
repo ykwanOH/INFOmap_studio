@@ -38,10 +38,10 @@ export function SectionPanel({ sectionKey, title, children, noPadding }: Section
       </button>
       {isOpen && (
         <div style={noPadding ? {} : {
-          padding: '8px 14px',
+          padding: '8px 12px',
           display: 'flex',
           flexDirection: 'column',
-          gap: '8px',
+          gap: '7px',
         }}>
           {children}
         </div>
@@ -99,6 +99,9 @@ export function Toggle({ checked, onChange, label }: ToggleProps) {
           color: 'var(--section-label-color)',
           fontWeight: 400,
           lineHeight: 1.2,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
         }}>
           {label}
         </span>
@@ -136,6 +139,7 @@ export function SliderControl({ label, value, min, max, step = 0.01, onChange, d
           color: 'var(--section-label-color)',
           fontWeight: 400,
           lineHeight: 1.2,
+          whiteSpace: 'nowrap',
         }}>
           {label}
         </span>
@@ -173,6 +177,9 @@ export function ColorPicker({ color, onChange, label }: ColorPickerProps) {
           color: 'var(--section-label-color)',
           fontWeight: 400,
           lineHeight: 1.2,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
         }}>
           {label}
         </span>

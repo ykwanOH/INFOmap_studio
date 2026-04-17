@@ -85,12 +85,11 @@ export function CameraPanel() {
           </div>
           <div style={{
             textAlign: 'center',
-            fontFamily: "'DM Mono', monospace",
-            fontSize: '9px',
+            fontFamily: "'DM Sans', sans-serif",
+            fontSize: '10px',
             color: 'var(--section-label-color)',
             padding: '3px 0 2px',
-            letterSpacing: '0.06em',
-            textTransform: 'uppercase',
+            letterSpacing: '0.03em',
             background: 'var(--glass-bg)',
           }}>
             벡터뷰
@@ -114,12 +113,11 @@ export function CameraPanel() {
           </div>
           <div style={{
             textAlign: 'center',
-            fontFamily: "'DM Mono', monospace",
-            fontSize: '9px',
+            fontFamily: "'DM Sans', sans-serif",
+            fontSize: '10px',
             color: 'var(--section-label-color)',
             padding: '3px 0 2px',
-            letterSpacing: '0.06em',
-            textTransform: 'uppercase',
+            letterSpacing: '0.03em',
             background: 'var(--glass-bg)',
           }}>
             위성뷰
@@ -158,7 +156,7 @@ export function CameraPanel() {
           fontSize: '11px',
           color: 'var(--section-label-color)',
         }}>
-          도로명
+          도로 표시
         </span>
         <Toggle
           checked={showRoads}

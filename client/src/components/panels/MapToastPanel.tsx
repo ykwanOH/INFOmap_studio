@@ -23,6 +23,7 @@ const labelStyle = {
   color: 'var(--section-label-color)',
   fontWeight: 400,
   lineHeight: 1.2,
+  whiteSpace: 'nowrap' as const,
 };
 
 // ── 컬러 스킴 정의 ──────────────────────────────────────────────────────────

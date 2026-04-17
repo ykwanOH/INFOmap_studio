@@ -3,7 +3,7 @@
    Reference: 3D Miniature Map Studio (sibling app)
    Panel bg: near-white warm (#f9f7f4), border: #e0dbd4
    Font: DM Sans (UI labels), DM Mono (values/section titles)
-   Panel width: 350px (fixed right panel)
+   Panel width: 350px (fixed right panel, PANEL_WIDTH const in ControlPanel.tsx)
    Section header: 11px DM Mono uppercase, 10px 14px padding
    Slider: 2px track, 14px thumb, dark charcoal
    Toggle: 36x20px pill
@@ -274,7 +274,7 @@
     font-weight: 500;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    padding: 5px 12px;
+    padding: 5px 10px;
     border: 1px solid var(--glass-border);
     background: transparent;
     color: var(--section-label-color);
@@ -282,6 +282,7 @@
     transition: all 0.12s;
     cursor: pointer;
     line-height: 1.2;
+    white-space: nowrap;
   }
   .action-btn:hover {
     background: rgba(0,0,0,0.04);
