@@ -46,12 +46,8 @@ function isRoadLayer(id: string): boolean {
 }
 
 // 도로 레이어 분류 — 패턴 기반 (벡터/위성 스타일 모두 대응)
-// A. 고속/간선도로: motorway, trunk, primary
-const EXPRESSWAY_PATTERNS = ['motorway', 'trunk', 'primary'];
-// B. 일반도로: secondary, tertiary, street, residential
-const STREETROAD_PATTERNS = ['secondary', 'tertiary', 'street', 'residential'];
-// C. 세부도로: minor, path, steps, service, pedestrian
-const LOCALROAD_PATTERNS = ['minor', 'path', 'steps', 'service', 'pedestrian', 'ferry'];
+// 주의: bridge-primary-secondary-tertiary처럼 복합 ID는
+//        secondary/tertiary를 먼저 체크해야 올바르게 street으로 분류됨
 
 // 레이어 ID가 도로 선 레이어인지 확인
 function isRoadLineLayer(id: string, type: string): boolean {
@@ -59,13 +55,27 @@ function isRoadLineLayer(id: string, type: string): boolean {
   return id.startsWith('road-') || id.startsWith('bridge-') || id.startsWith('tunnel-');
 }
 
+// 케이싱 레이어 여부 (아웃라인 역할 — 색 덮어쓰기 제외)
+function isRoadCaseLayer(id: string): boolean {
+  return id.endsWith('-case');
+}
+
 // 레이어 ID로 도로 등급 판별
+// ★ 체크 순서: secondary/tertiary → motorway/trunk/primary → street → local
+//    이유: 'bridge-primary-secondary-tertiary'는 secondary가 포함되어 있으므로
+//          primary보다 먼저 secondary를 체크해야 street으로 올바르게 분류됨
 function getRoadTier(id: string): 'expressway' | 'street' | 'local' | null {
   const lower = id.toLowerCase();
-  if (EXPRESSWAY_PATTERNS.some(p => lower.includes(p))) return 'expressway';
-  if (STREETROAD_PATTERNS.some(p => lower.includes(p))) return 'street';
-  if (LOCALROAD_PATTERNS.some(p => lower.includes(p))) return 'local';
-  // 그 외 road- bridge- tunnel- 은 local로 처리
+  // ① secondary / tertiary 먼저 → 복합 ID에서 primary보다 우선
+  if (lower.includes('secondary') || lower.includes('tertiary')) return 'street';
+  // ② expressway 계열
+  if (lower.includes('motorway') || lower.includes('trunk') || lower.includes('primary')) return 'expressway';
+  // ③ 일반도로
+  if (lower.includes('street') || lower.includes('residential')) return 'street';
+  // ④ 세부도로
+  if (lower.includes('minor') || lower.includes('path') || lower.includes('steps') ||
+      lower.includes('service') || lower.includes('pedestrian') || lower.includes('ferry')) return 'local';
+  // ⑤ 그 외 road- bridge- tunnel- 은 local로 처리
   if (lower.startsWith('road-') || lower.startsWith('bridge-') || lower.startsWith('tunnel-')) return 'local';
   return null;
 }
@@ -729,9 +739,14 @@ function applyColors(map: mapboxgl.Map, colors: import('@/store/useMapStore').Co
       if (map.getLayer(id)) map.setPaintProperty(id, 'fill-color', colors.green);
     }
 
-    // ── 도로 컬러 — 패턴 기반으로 등급 분류하여 적용 (벡터/위성 공통) ──
+    // ── 도로 컬러 — 등급별 분류하여 적용 (벡터/위성 공통) ──
+    // ★ 케이싱(-case) 레이어는 색 적용 제외:
+    //    벡터(light-v11)에서 케이싱은 흰색 아웃라인으로 도로의 테두리를 그림.
+    //    케이싱에 도로 색을 덮어쓰면 아웃라인이 사라져 도로 구조 전체가 무너짐.
+    //    → fill 레이어(road-motorway-trunk 등)에만 색 적용하고 케이싱은 원래 색 유지.
     for (const layer of style.layers) {
       if (!isRoadLineLayer(layer.id, layer.type)) continue;
+      if (isRoadCaseLayer(layer.id)) continue; // ★ 케이싱 제외
       const tier = getRoadTier(layer.id);
       if (!tier) continue;
       try {
