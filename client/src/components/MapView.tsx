@@ -707,18 +707,21 @@ function applyRoadVisibility(map: mapboxgl.Map, visible: boolean) {
         if (!tier) continue;
 
         const show = visible && (tier === 'expressway' || tier === 'street');
+        console.log(`[road] ${id} tier=${tier} show=${show}`);
 
-        // opacity로 표시/숨김 (visibility는 건드리지 않음)
         if (isRoadCaseLayer(id)) {
-          // 케이싱은 opacity 건드리면 아웃라인이 사라짐 → visibility로만
           map.setLayoutProperty(id, 'visibility', show ? 'visible' : 'none');
         } else {
           map.setLayoutProperty(id, 'visibility', 'visible');
           map.setPaintProperty(id, 'line-opacity', show ? 1 : 0);
         }
-      } catch (_) {}
+      } catch (e) {
+        console.error(`[road ERROR] ${id}:`, e);
+      }
     }
-  } catch (e) {}
+  } catch (e) {
+    console.error('[applyRoadVisibility ERROR]', e);
+  }
 }
 
 function applyColors(map: mapboxgl.Map, colors: import('@/store/useMapStore').ColorConfig) {
