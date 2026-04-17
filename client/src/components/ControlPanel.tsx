@@ -50,7 +50,7 @@ function PanelSectionDivider() {
   );
 }
 
-const PANEL_WIDTH = '350px'; // 고정 너비
+const PANEL_WIDTH = '270px'; // 고정 너비
 
 export function ControlPanel() {
   const { panelVisible, setPanelVisible } = useMapStore();
@@ -94,6 +94,7 @@ export function ControlPanel() {
           width: PANEL_WIDTH,
           minWidth: PANEL_WIDTH,
           maxWidth: PANEL_WIDTH,
+          flexShrink: 0,
           height: '100vh',
           overflowY: 'auto',
           borderRadius: 0,

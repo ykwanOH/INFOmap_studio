@@ -125,43 +125,21 @@ export function CameraPanel() {
         </button>
       </div>
 
-      {/* 지역명 토글 (벡터뷰 아래) */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingTop: '2px',
-      }}>
-        <span style={{
-          fontFamily: "'DM Sans', sans-serif",
-          fontSize: '11px',
-          color: 'var(--section-label-color)',
-        }}>
-          지역명
-        </span>
-        <Toggle
-          checked={showLabels}
-          onChange={setShowLabels}
-        />
-      </div>
-
-      {/* 도로명 토글 (위성뷰 아래) */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-      }}>
-        <span style={{
-          fontFamily: "'DM Sans', sans-serif",
-          fontSize: '11px',
-          color: 'var(--section-label-color)',
-        }}>
-          도로 표시
-        </span>
-        <Toggle
-          checked={showRoads}
-          onChange={setShowRoads}
-        />
+      {/* 지역명 / 도로표시 토글 — 한 줄 유지 */}
+      <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flex: 1, gap: '4px' }}>
+          <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '11px', color: 'var(--section-label-color)', whiteSpace: 'nowrap' }}>
+            지역명
+          </span>
+          <Toggle checked={showLabels} onChange={setShowLabels} />
+        </div>
+        <div style={{ width: 1, height: 14, background: 'var(--glass-border)', flexShrink: 0 }} />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flex: 1, gap: '4px' }}>
+          <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '11px', color: 'var(--section-label-color)', whiteSpace: 'nowrap' }}>
+            도로
+          </span>
+          <Toggle checked={showRoads} onChange={setShowRoads} />
+        </div>
       </div>
     </SectionPanel>
   );
