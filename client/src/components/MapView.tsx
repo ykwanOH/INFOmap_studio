@@ -133,13 +133,13 @@ export default function MapView() {
       applyColors(map, store.colors);
       applyLabelVisibility(map, store.showLabels);
       applyRoadVisibility(map, store.showRoads);
-      applyRoadWidthOverride(map, 'vector'); // 초기 스타일 = 벡터
+      applyRoadWidthOverride(map); // 초기 스타일 = 벡터
       // ★ idle 후 재적용: 'load' 직후 일부 레이어가 아직 초기화 중일 수 있어
       //   setLayoutProperty가 silently fail하는 경우를 보완.
       map.once('idle', () => {
         applyColors(map, store.colors);
         applyRoadVisibility(map, store.showRoads);
-        applyRoadWidthOverride(map, 'vector');
+        applyRoadWidthOverride(map);
       });
       setMapInstance(map);
     });
@@ -170,12 +170,12 @@ export default function MapView() {
       // 벡터/위성 모두 line-width 명시: width를 직접 찍으면
       // setLayoutProperty('visibility') 타이밍 실패를 우회하고
       // 레이어가 확실히 렌더링 파이프라인에 진입함
-      applyRoadWidthOverride(map, mapStyle);
+      applyRoadWidthOverride(map);
       // ★ idle 후 재적용: 스타일 전환 직후 레이어가 완전히 초기화되지 않은 경우 보완
       map.once('idle', () => {
         applyColors(map, store.colors);
         applyRoadVisibility(map, store.showRoads);
-        applyRoadWidthOverride(map, mapStyle);
+        applyRoadWidthOverride(map);
       });
     });
   }, [mapStyle]);
@@ -632,13 +632,8 @@ export default function MapView() {
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-function applyRoadWidthOverride(map: mapboxgl.Map, style: 'vector' | 'satellite') {
-  // 벡터/위성 모두 line-width를 명시적으로 설정:
-  // setPaintProperty('line-width')는 setLayoutProperty('visibility')보다
-  // 레이어를 렌더링 파이프라인에 확실히 진입시키는 효과가 있어
-  // 'load'/'style.load' 직후 visibility silently-fail 문제를 우회함.
-  // 위성: 기본 width가 너무 굵으므로 50% 수준으로 감소
-  // 벡터: 기본 width 유지 (그대로 1로 곱하는 scale = 원래값 유지)
+function applyRoadWidthOverride(map: mapboxgl.Map) {
+  // 벡터/위성 동일한 width 값 적용 — 위성에서 동작 확인된 값 그대로 사용
   try {
     const layers = map.getStyle()?.layers || [];
     for (const layer of layers) {
@@ -646,40 +641,22 @@ function applyRoadWidthOverride(map: mapboxgl.Map, style: 'vector' | 'satellite'
       const tier = getRoadTier(layer.id);
       if (!tier) continue;
       try {
-        if (style === 'satellite') {
-          // 위성: 굵기 축소
-          if (tier === 'expressway') {
-            map.setPaintProperty(layer.id, 'line-width', [
-              'interpolate', ['linear'], ['zoom'],
-              3, 0.5, 5, 0.8, 7, 1.2, 9, 1.2, 12, 1.6,
-            ]);
-          } else if (tier === 'street') {
-            map.setPaintProperty(layer.id, 'line-width', [
-              'interpolate', ['linear'], ['zoom'],
-              5, 0.5, 7, 0.8, 9, 0.8, 12, 1.2,
-            ]);
-            map.setPaintProperty(layer.id, 'line-opacity', 1);
-          } else {
-            map.setPaintProperty(layer.id, 'line-width', [
-              'interpolate', ['linear'], ['zoom'],
-              7, 0.4, 9, 0.5, 12, 0.8,
-            ]);
-          }
+        if (tier === 'expressway') {
+          map.setPaintProperty(layer.id, 'line-width', [
+            'interpolate', ['linear'], ['zoom'],
+            3, 0.5, 5, 0.8, 7, 1.2, 9, 1.2, 12, 1.6,
+          ]);
+        } else if (tier === 'street') {
+          map.setPaintProperty(layer.id, 'line-width', [
+            'interpolate', ['linear'], ['zoom'],
+            5, 0.5, 7, 0.8, 9, 0.8, 12, 1.2,
+          ]);
+          map.setPaintProperty(layer.id, 'line-opacity', 1);
         } else {
-          // 벡터: light-v11 기본 width와 같은 값으로 명시 설정
-          // (setPaintProperty 호출 자체가 레이어 활성화 트리거 역할)
-          if (tier === 'expressway') {
-            map.setPaintProperty(layer.id, 'line-width', [
-              'interpolate', ['linear'], ['zoom'],
-              5, 0.75, 7, 1.5, 9, 2.5, 12, 4, 18, 12,
-            ]);
-          } else if (tier === 'street') {
-            map.setPaintProperty(layer.id, 'line-width', [
-              'interpolate', ['linear'], ['zoom'],
-              7, 0.5, 9, 1.0, 12, 2.0, 15, 6, 18, 10,
-            ]);
-          }
-          // local tier는 visibility=none이므로 처리 불필요
+          map.setPaintProperty(layer.id, 'line-width', [
+            'interpolate', ['linear'], ['zoom'],
+            7, 0.4, 9, 0.5, 12, 0.8,
+          ]);
         }
       } catch (_) {}
     }
@@ -874,7 +851,7 @@ function initCustomLayers(map: mapboxgl.Map) {
   // ── 위성뷰 도로 굵기 override ─────────────────────────────────────────
   // 위성뷰 기본 도로가 너무 굵으므로 원래 대비 50% 수준으로 조절
   // Z5이하: 50%, Z5-7: 60%, Z7이후: 60% 유지, Z9 급증 억제
-  // 위성 스타일일 때 도로 굵기 override는 style.load 콜백에서 applyRoadWidthOverride(map, 'satellite')로 처리
+  // 위성 스타일일 때 도로 굵기 override는 style.load 콜백에서 applyRoadWidthOverride(map)로 처리
 
   // ── 한국 행정구역 GeoJSON (lazy load) ──────────────────────────────────
   // public/korea_admin.geojson — 읍면동 레벨 (3558개)
