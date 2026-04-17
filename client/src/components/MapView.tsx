@@ -144,7 +144,12 @@ export default function MapView() {
       });
       setMapInstance(map);
     });
-    map.on('zoom', () => setZoom(parseFloat(map.getZoom().toFixed(2))));
+    map.on('zoom', () => {
+      setZoom(parseFloat(map.getZoom().toFixed(2)));
+      // 줌 변경 시 도로 등장/소멸 기준 재적용
+      const store = useMapStore.getState();
+      if (styleLoadedRef.current) applyRoadVisibility(map, store.showRoads);
+    });
     mapRef.current = map;
     return () => {
       styleLoadedRef.current = false;
@@ -686,35 +691,31 @@ function applyLabelVisibility(map: mapboxgl.Map, visible: boolean) {
 }
 
 function applyRoadVisibility(map: mapboxgl.Map, visible: boolean) {
-  // ★ setLayoutProperty('visibility') 방식 폐기:
-  //   'load'/'style.load' 직후 silently fail이 반복됨.
-  //   대신 setPaintProperty('line-opacity')로 on/off 제어.
-  //   레이어는 항상 visible 상태로 두고 opacity만 0↔1로 전환.
   try {
     const style = map.getStyle();
     if (!style?.layers) return;
+    const zoom = map.getZoom();
 
     for (const layer of style.layers) {
       const id = layer.id;
       try {
-        // 도로명 텍스트 — symbol 레이어는 visibility로만 처리 (opacity 없음)
         if (isLabelLayer(id) && isRoadLayer(id)) {
           map.setLayoutProperty(id, 'visibility', 'none');
           continue;
         }
-        // 도로 선 레이어만 처리
         if (!isRoadLineLayer(id, layer.type)) continue;
         const tier = getRoadTier(id);
         if (!tier) continue;
 
-        const show = visible && (tier === 'expressway' || tier === 'street');
+        // expressway: zoom 7 이상, street/local: zoom 12.5 이상
+        const zoomOk = tier === 'expressway' ? zoom >= 7 : zoom >= 12.5;
+        const show = visible && (tier === 'expressway' || tier === 'street') && zoomOk;
+
         map.setLayoutProperty(id, 'visibility', 'visible');
         map.setPaintProperty(id, 'line-opacity', show ? 1 : 0);
-      } catch (e) {
-      }
+      } catch (e) {}
     }
-  } catch (e) {
-  }
+  } catch (e) {}
 }
 
 function applyColors(map: mapboxgl.Map, colors: import('@/store/useMapStore').ColorConfig) {
