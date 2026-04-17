@@ -636,72 +636,74 @@ function applyRoadVisibility(map: mapboxgl.Map, visible: boolean) {
 
 function applyColors(map: mapboxgl.Map, colors: import('@/store/useMapStore').ColorConfig) {
   try {
-    // 모든 레이어를 순회하며 대지/수계/녹지/경계 적용
     const style = map.getStyle();
-    if (style?.layers) {
-      for (const layer of style.layers) {
-        const id = layer.id;
-        try {
-          // 배경 레이어
-          if (layer.type === 'background') {
-            map.setPaintProperty(id, 'background-color', colors.landmass);
+    if (!style?.layers) return;
+
+    for (const layer of style.layers) {
+      const id = layer.id;
+      try {
+        // ── 배경 ──
+        if (layer.type === 'background') {
+          map.setPaintProperty(id, 'background-color', colors.landmass);
+        }
+        // ── 대지 fill (수계/녹지 제외) ──
+        else if (
+          layer.type === 'fill' &&
+          (id.startsWith('land') || id.includes('landuse') || id.includes('landcover') ||
+           id === 'national-park' || id === 'landuse-park')
+        ) {
+          if (id.includes('water') || id.includes('hydro')) continue;
+          if (id.includes('wood') || id.includes('grass') || id.includes('park') || id.includes('national')) {
+            map.setPaintProperty(id, 'fill-color', colors.green);
+          } else {
+            map.setPaintProperty(id, 'fill-color', colors.landmass);
           }
-          // 대지 관련 fill 레이어 (대지, 토지, 주거지 등)
-          else if (layer.type === 'fill' && (
-            id.startsWith('land') || id.includes('landuse') || id.includes('landcover') ||
-            id === 'national-park' || id === 'landuse-park'
-          )) {
-            // 수계/녹지는 제외
-            if (id.includes('water') || id.includes('hydro')) continue;
-            if (id.includes('wood') || id.includes('grass') || id.includes('park') || id.includes('national')) {
-              map.setPaintProperty(id, 'fill-color', colors.green);
-            } else {
-              map.setPaintProperty(id, 'fill-color', colors.landmass);
-            }
-          }
-          // 수계 fill
-          else if (layer.type === 'fill' && (id.includes('water'))) {
-            map.setPaintProperty(id, 'fill-color', colors.hydro);
-          }
-          // 수계 line
-          else if (layer.type === 'line' && (id === 'waterway' || id.includes('waterway'))) {
-            map.setPaintProperty(id, 'line-color', colors.hydro);
-          }
-          // 경계선 line
-          else if (layer.type === 'line' && (id.includes('admin') || id.includes('boundary'))) {
-            map.setPaintProperty(id, 'line-color', colors.boundary);
-          }
-        } catch (_) {}
-      }
+        }
+        // ── 수계 fill ──
+        else if (layer.type === 'fill' && id.includes('water')) {
+          map.setPaintProperty(id, 'fill-color', colors.hydro);
+        }
+        // ── 수계 line ──
+        else if (layer.type === 'line' && (id === 'waterway' || id.includes('waterway'))) {
+          map.setPaintProperty(id, 'line-color', colors.hydro);
+        }
+      } catch (_) {}
     }
-    // 수계 (Hydro)
-    if (map.getLayer('water')) map.setPaintProperty('water', 'fill-color', colors.hydro);
-    if (map.getLayer('water-shadow')) map.setPaintProperty('water-shadow', 'fill-color', colors.hydro);
+
+    // ── 수계 명시 레이어 ──
+    for (const id of ['water', 'water-shadow']) {
+      if (map.getLayer(id)) map.setPaintProperty(id, 'fill-color', colors.hydro);
+    }
     if (map.getLayer('waterway')) map.setPaintProperty('waterway', 'line-color', colors.hydro);
-    // 녹지 (Green)
-    const greenLayers = ['national-park', 'landuse-park', 'landcover-wood', 'landcover-grass'];
-    for (const id of greenLayers) {
+
+    // ── 녹지 ──
+    for (const id of ['national-park', 'landuse-park', 'landcover-wood', 'landcover-grass']) {
       if (map.getLayer(id)) map.setPaintProperty(id, 'fill-color', colors.green);
     }
-    // 경계선 (Boundary)
-    const boundaryLayers = ['admin-0-boundary', 'admin-0-boundary-disputed', 'admin-1-boundary'];
-    for (const id of boundaryLayers) {
-      if (map.getLayer(id)) map.setPaintProperty(id, 'line-color', colors.boundary);
-    }
-    // 고속/간선도로
+
+    // ── 고속/간선도로 — 벡터/위성 모두 동일 적용 ──
     for (const id of EXPRESSWAY_LAYERS) {
       if (!map.getLayer(id)) continue;
-      const layerType = map.getLayer(id)?.type;
-      if (layerType === 'line') map.setPaintProperty(id, 'line-color', colors.expressway);
-      else if (layerType === 'fill') map.setPaintProperty(id, 'fill-color', colors.expressway);
+      try {
+        const t = map.getLayer(id)?.type;
+        if (t === 'line') map.setPaintProperty(id, 'line-color', colors.expressway);
+        else if (t === 'fill') map.setPaintProperty(id, 'fill-color', colors.expressway);
+      } catch (_) {}
     }
-    // 국지/로컈 도로
+
+    // ── 국지/로컬 도로 — 벡터/위성 모두 동일 적용 ──
     for (const id of LOCALROAD_LAYERS) {
       if (!map.getLayer(id)) continue;
-      const layerType = map.getLayer(id)?.type;
-      if (layerType === 'line') map.setPaintProperty(id, 'line-color', colors.localroad);
-      else if (layerType === 'fill') map.setPaintProperty(id, 'fill-color', colors.localroad);
+      try {
+        const t = map.getLayer(id)?.type;
+        if (t === 'line') map.setPaintProperty(id, 'line-color', colors.localroad);
+        else if (t === 'fill') map.setPaintProperty(id, 'fill-color', colors.localroad);
+      } catch (_) {}
     }
+
+    // ── 경계선은 Border & Marker 패널의 borders 상태가 직접 제어 ──
+    // (applyColors에서 boundary 컬러를 덮어쓰지 않음)
+
   } catch (e) { /* layer may not exist */ }
 }
 

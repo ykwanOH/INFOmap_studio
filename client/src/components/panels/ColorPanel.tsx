@@ -1,9 +1,7 @@
 /**
- * MACRO Map Studio — Color Panel (v3)
- * 6 color items: 대지 / 수계 / 녹지 / 고속·간선도로 / 국지·로컬 도로 / 경계선
- * Default values:
- *   대지 #E9E4E0 / 수계 #BAC1D3 / 녹지 #B3BDA3
- *   고속/간선도로 #ECECEC / 국지/로컬 도로 #ECE6E4 / 경계선 #780014
+ * MACRO Map Studio — Color Panel (v4)
+ * 5 color items: 대지 / 수계 / 녹지 / 고속·간선도로 / 국지·로컬 도로
+ * 경계선 컬러는 Border & Marker 패널에서 레벨별로 개별 관리
  */
 
 import { useMapStore, type ColorConfig } from '@/store/useMapStore';
@@ -16,7 +14,6 @@ const COLOR_LABELS: { key: keyof ColorConfig; label: string }[] = [
   { key: 'green',      label: '녹지' },
   { key: 'expressway', label: '고속·간선도로' },
   { key: 'localroad',  label: '국지·로컬 도로' },
-  { key: 'boundary',   label: '경계선' },
 ];
 
 export function ColorPanel() {

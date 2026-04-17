@@ -22,9 +22,8 @@ export interface ColorConfig {
   landmass: string;    // 대지
   hydro: string;       // 수계
   green: string;       // 녹지
-  expressway: string;  // 고속/간선도로
-  localroad: string;   // 국지/로컬 도로
-  boundary: string;    // 경계선
+  expressway: string;  // 고속/간선도로 (motorway, trunk, primary)
+  localroad: string;   // 국지/로컬 도로 (secondary 이하)
 }
 
 export interface BorderConfig {
@@ -176,7 +175,6 @@ const DEFAULT_COLORS: ColorConfig = {
   green:      '#B3BDA3',
   expressway: '#ECECEC',
   localroad:  '#ECE6E4',
-  boundary:   '#780014',
 };
 
 const DEFAULT_BORDERS: Record<BorderLevel, BorderConfig> = {
