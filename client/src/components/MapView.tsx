@@ -638,7 +638,6 @@ export default function MapView() {
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 function applyRoadWidthOverride(map: mapboxgl.Map) {
-  // 벡터/위성 동일한 width 값 적용 — 위성에서 동작 확인된 값 그대로 사용
   try {
     const layers = map.getStyle()?.layers || [];
     for (const layer of layers) {
@@ -649,18 +648,18 @@ function applyRoadWidthOverride(map: mapboxgl.Map) {
         if (tier === 'expressway') {
           map.setPaintProperty(layer.id, 'line-width', [
             'interpolate', ['linear'], ['zoom'],
-            3, 0.5, 5, 0.8, 7, 1.2, 9, 1.2, 12, 1.6,
+            3, 0.3, 5, 0.5, 7, 0.8, 9, 1.0, 12, 1.4, 15, 1.8,
           ]);
         } else if (tier === 'street') {
           map.setPaintProperty(layer.id, 'line-width', [
             'interpolate', ['linear'], ['zoom'],
-            5, 0.5, 7, 0.8, 9, 0.8, 12, 1.2,
+            5, 0.3, 7, 0.5, 9, 0.6, 12, 0.9, 15, 1.2,
           ]);
           map.setPaintProperty(layer.id, 'line-opacity', 1);
         } else {
           map.setPaintProperty(layer.id, 'line-width', [
             'interpolate', ['linear'], ['zoom'],
-            7, 0.4, 9, 0.5, 12, 0.8,
+            7, 0.2, 9, 0.3, 12, 0.5,
           ]);
         }
       } catch (_) {}
@@ -782,10 +781,9 @@ function applyColors(map: mapboxgl.Map, colors: import('@/store/useMapStore').Co
                     : tier === 'street'     ? colors.streetroad
                     : null;
         if (!color) continue;
-        console.log(`[color] ${layer.id} tier=${tier} color=${color}`);
         map.setPaintProperty(layer.id, 'line-color', color);
         map.setPaintProperty(layer.id, 'line-opacity', 1);
-      } catch (e) { console.error(`[color ERR] ${layer.id}`, e); }
+      } catch (_) {}
     }
 
     // ── 경계선은 Border & Marker 패널의 borders 상태가 직접 제어 ──
