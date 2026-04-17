@@ -39,8 +39,12 @@ const SCHEME_ORDER: MapToastScheme[] = ['twotone', 'beigegray', 'bluegray'];
 
 // 허용할 레이어 패턴 — 이 외 모든 레이어는 숨김
 const ALLOWED_LAYER_TYPES = new Set(['background', 'fill', 'line']);
-const LAND_IDS  = ['land', 'land-structure-polygon', 'landuse', 'landuse-residential'];
-const GREEN_IDS = ['national-park', 'landuse-park', 'landcover-wood', 'landcover-grass'];
+const LAND_IDS  = [
+  'land', 'land-structure-polygon', 'landuse', 'landuse-residential',
+  'landcover', 'landcover-crop', 'landcover-grass', 'landcover-scrub',  // streets-v12 추가
+  'national-park', 'landuse-park',
+];
+const GREEN_IDS = ['landcover-wood', 'landcover-grass', 'national-park', 'landuse-park'];
 const WATER_IDS = ['water', 'water-shadow'];
 const BORDER_IDS = ['admin-0-boundary', 'admin-0-boundary-disputed'];
 
@@ -68,7 +72,7 @@ function applySchemeToMini(
     try {
       if (type === 'symbol') { map.setLayoutProperty(id, 'visibility', 'none'); continue; }
 
-      if (type === 'background') { map.setPaintProperty(id, 'background-color', cfg.water); continue; }
+      if (type === 'background') { map.setPaintProperty(id, 'background-color', cfg.land); continue; }
 
       if (LAND_IDS.includes(id) && type === 'fill') {
         map.setPaintProperty(id, 'fill-color', cfg.land);

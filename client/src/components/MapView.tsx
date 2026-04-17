@@ -226,94 +226,49 @@ export default function MapView() {
     applyRoadVisibility(map, showRoads);
   }, [showRoads]);
 
+
   // ── Border layers ───────────────────────────────────────────────────────
-  // country  : Mapbox admin_0 (국경)
-  // state    : Mapbox admin_1 (주경계) + 한국 sido 레벨 GeoJSON
-  // district : 한국 sgg 레벨 GeoJSON (서울 25구, 각 도 시군)
+  // streets-v12의 기존 admin 레이어를 직접 제어 (커스텀 addLayer 방식 폐기)
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !styleLoadedRef.current) return;
 
-    // ── 국경 (country) ──────────────────────────────────────────────────
-    const countryCfg = borders.country;
-    const countryLayerId = 'macro-admin-country';
-    if (!map.getLayer(countryLayerId)) {
-      const src = findVectorSource(map);
-      if (src) {
-        try {
-          map.addLayer({
-            id: countryLayerId,
-            type: 'line',
-            source: src,
-            'source-layer': 'admin',
-            filter: ['all', ['==', ['get', 'admin_level'], 0], ['==', ['get', 'disputed'], false]],
-            layout: { 'line-join': 'round', 'line-cap': 'round', visibility: 'visible' },
-            paint: {
-              'line-color': countryCfg.color,
-              // 줌에 따라 선 두께 자동 조절
-              'line-width': ['interpolate', ['linear'], ['zoom'],
-                3, countryCfg.width * 0.6,
-                6, countryCfg.width,
-                10, countryCfg.width * 1.4,
-              ],
-              'line-opacity': 0.9,
-            },
-          });
-        } catch (_) {}
-      }
-    }
-    if (map.getLayer(countryLayerId)) {
-      map.setLayoutProperty(countryLayerId, 'visibility', countryCfg.enabled ? 'visible' : 'none');
-      map.setPaintProperty(countryLayerId, 'line-color', countryCfg.color);
-      map.setPaintProperty(countryLayerId, 'line-width', ['interpolate', ['linear'], ['zoom'],
-        3, countryCfg.width * 0.6, 6, countryCfg.width, 10, countryCfg.width * 1.4,
-      ]);
+    const countryCfg  = borders.country;
+    const stateCfg    = borders.state;
+    const districtCfg = borders.district;
+
+    // ── 국경 (country) — streets-v12 기존 레이어 직접 제어 ───────────────
+    for (const id of ['admin-0-boundary', 'admin-0-boundary-disputed']) {
+      if (!map.getLayer(id)) continue;
+      try {
+        map.setLayoutProperty(id, 'visibility', countryCfg.enabled ? 'visible' : 'none');
+        map.setPaintProperty(id, 'line-color', countryCfg.color);
+        map.setPaintProperty(id, 'line-width', ['interpolate', ['linear'], ['zoom'],
+          3, countryCfg.width * 0.6, 6, countryCfg.width, 10, countryCfg.width * 1.4,
+        ]);
+        map.setPaintProperty(id, 'line-opacity', 0.9);
+      } catch (_) {}
     }
 
-    // ── 주/도 경계 (state) — Mapbox admin_1 ─────────────────────────────
-    const stateCfg = borders.state;
-    const stateLayerId = 'macro-admin-state';
-    if (!map.getLayer(stateLayerId)) {
-      const src = findVectorSource(map);
-      if (src) {
-        try {
-          map.addLayer({
-            id: stateLayerId,
-            type: 'line',
-            source: src,
-            'source-layer': 'admin',
-            filter: ['==', ['get', 'admin_level'], 1],
-            layout: { 'line-join': 'round', 'line-cap': 'round', visibility: 'none' },
-            paint: {
-              'line-color': stateCfg.color,
-              'line-width': ['interpolate', ['linear'], ['zoom'],
-                4, stateCfg.width * 0.5,
-                7, stateCfg.width,
-                11, stateCfg.width * 1.6,
-              ],
-              'line-opacity': 0.85,
-            },
-          });
-        } catch (_) {}
-      }
-    }
-    if (map.getLayer(stateLayerId)) {
-      map.setLayoutProperty(stateLayerId, 'visibility', stateCfg.enabled ? 'visible' : 'none');
-      map.setPaintProperty(stateLayerId, 'line-color', stateCfg.color);
-      map.setPaintProperty(stateLayerId, 'line-width', ['interpolate', ['linear'], ['zoom'],
-        4, stateCfg.width * 0.5, 7, stateCfg.width, 11, stateCfg.width * 1.6,
-      ]);
+    // ── 주/도 경계 (state) — streets-v12 기존 레이어 + 한국 GeoJSON ──────
+    for (const id of ['admin-1-boundary', 'admin-1-boundary-bg']) {
+      if (!map.getLayer(id)) continue;
+      try {
+        map.setLayoutProperty(id, 'visibility', stateCfg.enabled ? 'visible' : 'none');
+        map.setPaintProperty(id, 'line-color', stateCfg.color);
+        map.setPaintProperty(id, 'line-width', ['interpolate', ['linear'], ['zoom'],
+          4, stateCfg.width * 0.5, 7, stateCfg.width, 11, stateCfg.width * 1.6,
+        ]);
+      } catch (_) {}
     }
 
-    // ── 한국 sido 경계 (state 레벨 오버레이) ────────────────────────────
+    // 한국 sido GeoJSON
     const koSidoLayerId = 'macro-korea-sido';
     if (map.getSource('korea-admin')) {
       if (!map.getLayer(koSidoLayerId)) {
         try {
           map.addLayer({
-            id: koSidoLayerId,
-            type: 'line',
-            source: 'korea-admin',
+            id: koSidoLayerId, type: 'line', source: 'korea-admin',
             layout: { 'line-join': 'round', 'line-cap': 'round', visibility: 'none' },
             paint: {
               'line-color': stateCfg.color,
@@ -334,16 +289,13 @@ export default function MapView() {
       }
     }
 
-    // ── 구/시 경계 (district) — 한국 sgg 레벨 ───────────────────────────
-    const districtCfg = borders.district;
+    // ── 구/시 경계 (district) — 한국 sgg GeoJSON ─────────────────────────
     const koSggLayerId = 'macro-korea-sgg';
     if (map.getSource('korea-admin')) {
       if (!map.getLayer(koSggLayerId)) {
         try {
           map.addLayer({
-            id: koSggLayerId,
-            type: 'line',
-            source: 'korea-admin',
+            id: koSggLayerId, type: 'line', source: 'korea-admin',
             layout: { 'line-join': 'round', 'line-cap': 'round', visibility: 'none' },
             paint: {
               'line-color': districtCfg.color,
@@ -364,6 +316,7 @@ export default function MapView() {
       }
     }
   }, [borders]);
+
 
   // ── Terrain exaggeration ────────────────────────────────────────────────
   useEffect(() => {
