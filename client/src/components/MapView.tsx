@@ -14,7 +14,7 @@ mapboxgl.accessToken =
   (import.meta.env.VITE_MAPBOX_TOKEN as string) ||
   '';
 
-const VECTOR_STYLE = 'mapbox://styles/mapbox/light-v11';
+const VECTOR_STYLE = 'mapbox://styles/mapbox/streets-v12';
 const SATELLITE_STYLE = 'mapbox://styles/mapbox/satellite-streets-v12';
 
 const EXTRA_LOOK_FILTERS: Record<string, string> = {
@@ -62,8 +62,9 @@ function isRoadCaseLayer(id: string): boolean {
 
 // 레이어 ID로 도로 등급 판별
 // ★ 체크 순서: secondary/tertiary/primary → motorway/trunk → street → simple → local
-//    expressway = motorway + trunk + simple (light-v11은 주요도로를 'simple'로 통합)
-//    streetroad = primary + secondary + tertiary + street + residential
+//    expressway = motorway + trunk
+//    streetroad = primary + secondary + tertiary + street + residential + simple
+//    (satellite-streets에서 road-simple은 모든 주요도로 통합 레이어 → street으로 처리)
 function getRoadTier(id: string): 'expressway' | 'street' | 'local' | null {
   const lower = id.toLowerCase();
   // ① street 계열 — primary 포함, 복합 ID도 포함
@@ -72,9 +73,9 @@ function getRoadTier(id: string): 'expressway' | 'street' | 'local' | null {
   if (lower.includes('motorway') || lower.includes('trunk')) return 'expressway';
   // ③ 일반도로
   if (lower.includes('street') || lower.includes('residential')) return 'street';
-  // ④ light-v11 전용: 'simple' = 고속/주요도로 통합 레이어 → expressway로 처리
+  // ④ simple = satellite-streets의 통합 도로 레이어 → street으로 처리
   //    (road-simple, bridge-simple, tunnel-simple, bridge-case-simple)
-  if (lower.includes('simple')) return 'expressway';
+  if (lower.includes('simple')) return 'street';
   // ⑤ 세부도로
   if (lower.includes('minor') || lower.includes('path') || lower.includes('steps') ||
       lower.includes('service') || lower.includes('pedestrian') || lower.includes('ferry') ||
@@ -711,20 +712,12 @@ function applyRoadVisibility(map: mapboxgl.Map, visible: boolean) {
         if (!tier) continue;
 
         const show = visible && (tier === 'expressway' || tier === 'street');
-        console.log(`[road] ${id} tier=${tier} show=${show}`);
-
-        if (isRoadCaseLayer(id)) {
-          map.setLayoutProperty(id, 'visibility', show ? 'visible' : 'none');
-        } else {
-          map.setLayoutProperty(id, 'visibility', 'visible');
-          map.setPaintProperty(id, 'line-opacity', show ? 1 : 0);
-        }
+        map.setLayoutProperty(id, 'visibility', 'visible');
+        map.setPaintProperty(id, 'line-opacity', show ? 1 : 0);
       } catch (e) {
-        console.error(`[road ERROR] ${id}:`, e);
       }
     }
   } catch (e) {
-    console.error('[applyRoadVisibility ERROR]', e);
   }
 }
 
@@ -780,13 +773,8 @@ function applyColors(map: mapboxgl.Map, colors: import('@/store/useMapStore').Co
     }
 
     // ── 도로 컬러 — 등급별 분류하여 적용 (벡터/위성 공통) ──
-    // ★ 케이싱(-case) 레이어는 색 적용 제외:
-    //    벡터(light-v11)에서 케이싱은 흰색 아웃라인으로 도로의 테두리를 그림.
-    //    케이싱에 도로 색을 덮어쓰면 아웃라인이 사라져 도로 구조 전체가 무너짐.
-    //    → fill 레이어(road-motorway-trunk 등)에만 색 적용하고 케이싱은 원래 색 유지.
     for (const layer of style.layers) {
       if (!isRoadLineLayer(layer.id, layer.type)) continue;
-      if (isRoadCaseLayer(layer.id)) continue; // ★ 케이싱 제외
       const tier = getRoadTier(layer.id);
       if (!tier) continue;
       try {
@@ -795,9 +783,6 @@ function applyColors(map: mapboxgl.Map, colors: import('@/store/useMapStore').Co
                     : null;
         if (!color) continue;
         map.setPaintProperty(layer.id, 'line-color', color);
-        // line-opacity도 명시: applyRoadVisibility의 opacity 제어와 연동
-        // 이 시점엔 showRoads 상태를 모르므로 1로 찍어두고
-        // 이후 applyRoadVisibility가 0/1로 최종 결정함
         map.setPaintProperty(layer.id, 'line-opacity', 1);
       } catch (_) {}
     }
