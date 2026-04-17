@@ -708,6 +708,10 @@ function applyLabelVisibility(map: mapboxgl.Map, visible: boolean) {
 }
 
 function applyRoadVisibility(map: mapboxgl.Map, visible: boolean) {
+  // ★ setLayoutProperty('visibility') 방식 폐기:
+  //   'load'/'style.load' 직후 silently fail이 반복됨.
+  //   대신 setPaintProperty('line-opacity')로 on/off 제어.
+  //   레이어는 항상 visible 상태로 두고 opacity만 0↔1로 전환.
   try {
     const style = map.getStyle();
     if (!style?.layers) return;
@@ -715,7 +719,7 @@ function applyRoadVisibility(map: mapboxgl.Map, visible: boolean) {
     for (const layer of style.layers) {
       const id = layer.id;
       try {
-        // 도로명 텍스트 항상 숨김
+        // 도로명 텍스트 — symbol 레이어는 visibility로만 처리 (opacity 없음)
         if (isLabelLayer(id) && isRoadLayer(id)) {
           map.setLayoutProperty(id, 'visibility', 'none');
           continue;
@@ -725,10 +729,16 @@ function applyRoadVisibility(map: mapboxgl.Map, visible: boolean) {
         const tier = getRoadTier(id);
         if (!tier) continue;
 
-        // ON: expressway + street 표시, local 숨김
-        // OFF: 전체 숨김
         const show = visible && (tier === 'expressway' || tier === 'street');
-        map.setLayoutProperty(id, 'visibility', show ? 'visible' : 'none');
+
+        // opacity로 표시/숨김 (visibility는 건드리지 않음)
+        if (isRoadCaseLayer(id)) {
+          // 케이싱은 opacity 건드리면 아웃라인이 사라짐 → visibility로만
+          map.setLayoutProperty(id, 'visibility', show ? 'visible' : 'none');
+        } else {
+          map.setLayoutProperty(id, 'visibility', 'visible');
+          map.setPaintProperty(id, 'line-opacity', show ? 1 : 0);
+        }
       } catch (_) {}
     }
   } catch (e) {}
@@ -798,9 +808,13 @@ function applyColors(map: mapboxgl.Map, colors: import('@/store/useMapStore').Co
       try {
         const color = tier === 'expressway' ? colors.expressway
                     : tier === 'street'     ? colors.streetroad
-                    : null; // local tier는 visibility=none이므로 색 적용 불필요
+                    : null;
         if (!color) continue;
         map.setPaintProperty(layer.id, 'line-color', color);
+        // line-opacity도 명시: applyRoadVisibility의 opacity 제어와 연동
+        // 이 시점엔 showRoads 상태를 모르므로 1로 찍어두고
+        // 이후 applyRoadVisibility가 0/1로 최종 결정함
+        map.setPaintProperty(layer.id, 'line-opacity', 1);
       } catch (_) {}
     }
 
