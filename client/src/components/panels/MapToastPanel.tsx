@@ -61,7 +61,6 @@ function applySchemeToMini(
   const cfg = SCHEME_CONFIGS[scheme];
   const bColor = borderColor || cfg.border;
   const bWidth = borderWidth ?? 1.5;
-  // 본지도와 동일한 줌 기준 굵기
   const bWidthExpr: mapboxgl.Expression = ['interpolate', ['linear'], ['zoom'],
     3, bWidth * 0.6, 6, bWidth, 10, bWidth * 1.4,
   ];
@@ -70,62 +69,71 @@ function applySchemeToMini(
   for (const layer of layers) {
     const { id, type } = layer;
     try {
-      if (type === 'symbol') { map.setLayoutProperty(id, 'visibility', 'none'); continue; }
-
-      if (type === 'background') { map.setPaintProperty(id, 'background-color', cfg.land); continue; }
-
-      if (LAND_IDS.includes(id) && type === 'fill') {
-        map.setPaintProperty(id, 'fill-color', cfg.land);
-        map.setPaintProperty(id, 'fill-opacity', 1);
+      // B. symbol 전체 숨김 (지명, POI, 도로번호 등)
+      if (type === 'symbol') {
+        map.setLayoutProperty(id, 'visibility', 'none');
         continue;
       }
 
-      if (GREEN_IDS.includes(id) && type === 'fill') {
-        map.setPaintProperty(id, 'fill-color', cfg.land);
-        map.setPaintProperty(id, 'fill-opacity', 1);
+      // 배경 → 대지색
+      if (type === 'background') {
+        map.setPaintProperty(id, 'background-color', cfg.land);
         continue;
       }
 
-      if (WATER_IDS.includes(id) && type === 'fill') {
+      // 수계 fill → 수계색
+      if (type === 'fill' && (id.includes('water') || WATER_IDS.includes(id))) {
         map.setPaintProperty(id, 'fill-color', cfg.water);
         continue;
       }
 
-      if ((id === 'waterway' || id.includes('waterway')) && type === 'line') {
+      // 수계 line
+      if (type === 'line' && (id === 'waterway' || id.includes('waterway'))) {
         map.setLayoutProperty(id, 'visibility', 'visible');
         map.setPaintProperty(id, 'line-color', cfg.water);
         continue;
       }
 
-      // C. 국경 (Mapbox 기본) — 색상·굵기 모두 반영
-      if (BORDER_IDS.includes(id) && type === 'line') {
+      // 대지·녹지 fill → 대지색 (수계 제외한 모든 fill)
+      if (type === 'fill' && !id.includes('water')) {
+        map.setLayoutProperty(id, 'visibility', 'visible');
+        map.setPaintProperty(id, 'fill-color', cfg.land);
+        map.setPaintProperty(id, 'fill-opacity', 1);
+        continue;
+      }
+
+      // C. 국경 → 항상 표시, 스킴 국경색
+      if (type === 'line' && BORDER_IDS.includes(id)) {
         map.setLayoutProperty(id, 'visibility', 'visible');
         map.setPaintProperty(id, 'line-color', bColor);
         map.setPaintProperty(id, 'line-width', bWidthExpr);
+        map.setPaintProperty(id, 'line-opacity', 0.9);
         continue;
       }
 
-      // 커스텀 국경 레이어 — 색상·굵기 모두 반영
-      if (CUSTOM_BORDER_IDS.includes(id)) {
-        if (id === 'macro-admin-country') {
-          map.setLayoutProperty(id, 'visibility', 'visible');
-          map.setPaintProperty(id, 'line-color', bColor);
-          map.setPaintProperty(id, 'line-width', bWidthExpr);
-        } else {
-          map.setLayoutProperty(id, 'visibility', 'none');
-        }
+      // 국경 이하 경계선 숨김
+      if (type === 'line' && (id.includes('admin-1') || id.includes('admin-2') ||
+          id.startsWith('macro-korea'))) {
+        map.setLayoutProperty(id, 'visibility', 'none');
         continue;
       }
 
+      // D. 도로 → 토글 따름
       if (type === 'line' && (id.startsWith('road-') || id.startsWith('bridge-') || id.startsWith('tunnel-'))) {
         map.setLayoutProperty(id, 'visibility', showRoads ? 'visible' : 'none');
         continue;
       }
 
-      if (!LAND_IDS.includes(id) && !GREEN_IDS.includes(id) && !WATER_IDS.includes(id) &&
-          !BORDER_IDS.includes(id) && !CUSTOM_BORDER_IDS.includes(id) &&
-          type !== 'background') {
+      // 나머지 line (fence, cliff 등) 숨김
+      if (type === 'line') {
         map.setLayoutProperty(id, 'visibility', 'none');
+        continue;
+      }
+
+      // fill-extrusion (건물 등) 숨김
+      if (type === 'fill-extrusion') {
+        map.setLayoutProperty(id, 'visibility', 'none');
+        continue;
       }
     } catch (_) {}
   }
