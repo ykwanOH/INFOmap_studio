@@ -107,12 +107,31 @@ export function HiResPanel() {
       setProgress('캔버스 읽는 중...');
 
       // 확대된 캔버스에서 단일 이미지 추출
+      // ── 비율 보정: srcCanvas는 브라우저 창 비율 × mult 크기
+      //    outW×outH(16:9)와 비율이 다를 수 있으므로 센터 크롭으로 맞춤
       const srcCanvas = mapInstance.getCanvas();
+      const srcW = srcCanvas.width;
+      const srcH = srcCanvas.height;
+      const targetRatio = outW / outH;        // 16:9 = 1.777...
+      const srcRatio    = srcW / srcH;
+
+      let cropX = 0, cropY = 0, cropW = srcW, cropH = srcH;
+      if (srcRatio > targetRatio) {
+        // 소스가 더 넓음 → 좌우 크롭
+        cropW = Math.round(srcH * targetRatio);
+        cropX = Math.round((srcW - cropW) / 2);
+      } else if (srcRatio < targetRatio) {
+        // 소스가 더 높음 → 상하 크롭
+        cropH = Math.round(srcW / targetRatio);
+        cropY = Math.round((srcH - cropH) / 2);
+      }
+
       const outCanvas = document.createElement('canvas');
-      outCanvas.width = outW;
+      outCanvas.width  = outW;
       outCanvas.height = outH;
       const ctx = outCanvas.getContext('2d')!;
-      ctx.drawImage(srcCanvas, 0, 0, outW, outH);
+      // sx,sy,sW,sH → dx,dy,dW,dH : 크롭 영역을 정확히 outW×outH로 스트레치
+      ctx.drawImage(srcCanvas, cropX, cropY, cropW, cropH, 0, 0, outW, outH);
 
       setProgress('저장 중...');
       const link = document.createElement('a');
