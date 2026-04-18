@@ -1,12 +1,18 @@
 /**
- * MACRO Map Studio — Hi-Res Capture Panel
+ * MACRO Map Studio — Hi-Res Capture Panel (v2)
  *
- * 뷰 줌은 그대로 유지하되, 타일 분할 방식으로
- * 더 높은 줌 레벨의 디테일을 고해상도 이미지로 캡처.
+ * ── 이전 방식의 문제 ──
+ * 타일 분할: 오프스크린 tempMap을 여러 장 찍어 붙이는 방식
+ * → 각 타일 캡처마다 GL 컨텍스트가 달라 이음새 어긋남(타일링 아티팩트) 발생
  *
- * 캡처 줌 = 현재 뷰 줌 + delta (0 | 1 | 2)
- * 분할 수 = 2^delta × 2^delta (4 | 16 장)
- * 출력 px = 1920×delta_multiplier × 1080×delta_multiplier
+ * ── 새 방식 ──
+ * 메인 맵의 devicePixelRatio를 직접 높여 캔버스를 확대 렌더링 후,
+ * 단일 이미지로 캡처하고 원래 ratio로 복원.
+ * → 타일 이음새 없음, 동일 뷰 그대로 고해상도 출력
+ *
+ * delta=0: ratio×1 → FHD  (1920×1080)
+ * delta=1: ratio×2 → 4K   (3840×2160)
+ * delta=2: ratio×4 → 8K   (7680×4320)
  */
 
 import { useCallback, useState } from 'react';
@@ -29,17 +35,17 @@ const monoStyle = {
   color: 'var(--section-label-color)',
 } as const;
 
-// 출력 해상도 레이블
 const RESOLUTION_LABEL: Record<0 | 1 | 2, string> = {
   0: 'FHD  1920 × 1080',
   1: '4K   3840 × 2160',
   2: '8K   7680 × 4320',
 };
 
-const TILE_COUNT: Record<0 | 1 | 2, number> = {
+// delta별 pixelRatio 배율
+const PIXEL_RATIO_MULT: Record<0 | 1 | 2, number> = {
   0: 1,
-  1: 4,
-  2: 16,
+  1: 2,
+  2: 4,
 };
 
 export function HiResPanel() {
@@ -55,12 +61,10 @@ export function HiResPanel() {
   const [progress, setProgress] = useState<string | null>(null);
 
   const delta = hiResZoomDelta as 0 | 1 | 2;
-  const captureZoom = zoom + delta;
-  const cols = Math.pow(2, delta); // 1 | 2 | 4
-  const outW = 1920 * cols;
-  const outH = 1080 * cols;
+  const mult = PIXEL_RATIO_MULT[delta];
+  const outW = 1920 * mult;
+  const outH = 1080 * mult;
 
-  // 슬라이더 값 → 스냅 (0 | 1 | 2)
   const handleSlider = (raw: number) => {
     const snapped = Math.round(raw) as 0 | 1 | 2;
     setHiResZoomDelta(snapped);
@@ -71,127 +75,70 @@ export function HiResPanel() {
     setHiResCapturing(true);
     setProgress('준비 중...');
 
-    try {
-      const center = mapInstance.getCenter();
-      const bearing = mapInstance.getBearing();
-      const pitch = mapInstance.getPitch();
+    // 원래 pixelRatio 저장
+    const originalRatio: number =
+      (mapInstance as any)._pixelRatio ??
+      window.devicePixelRatio ??
+      1;
 
-      // 출력 캔버스
+    try {
+      setProgress('고해상도 렌더링 중...');
+
+      // ── pixelRatio 오버라이드: 캔버스 자체를 mult배로 확대 렌더 ──
+      // setPixelRatio는 Mapbox GL v2.4+에서 공식 지원
+      if (typeof (mapInstance as any).setPixelRatio === 'function') {
+        (mapInstance as any).setPixelRatio(originalRatio * mult);
+      } else {
+        // fallback: 내부 프로퍼티 직접 조작
+        (mapInstance as any)._pixelRatio = originalRatio * mult;
+        (mapInstance as any).resize();
+      }
+
+      // 렌더 완전 안정화 대기: idle + 2프레임
+      await new Promise<void>((resolve) => {
+        const onIdle = () => {
+          mapInstance.off('idle', onIdle);
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+        };
+        mapInstance.on('idle', onIdle);
+        mapInstance.triggerRepaint();
+      });
+
+      setProgress('캔버스 읽는 중...');
+
+      // 확대된 캔버스에서 단일 이미지 추출
+      const srcCanvas = mapInstance.getCanvas();
       const outCanvas = document.createElement('canvas');
       outCanvas.width = outW;
       outCanvas.height = outH;
       const ctx = outCanvas.getContext('2d')!;
-
-      // delta=0: 단일 캡처
-      if (delta === 0) {
-        setProgress('캡처 중...');
-        await new Promise<void>((resolve) => {
-          mapInstance.once('render', () => {
-            ctx.drawImage(mapInstance.getCanvas(), 0, 0, outW, outH);
-            resolve();
-          });
-          mapInstance.triggerRepaint();
-        });
-      } else {
-        // 타일 분할 캡처
-        // ── 핵심: 픽셀 좌표 기준으로 타일 센터 계산 (Mercator 왜곡 보정) ──
-        // 위도를 균등 분할하면 Mercator 비선형 때문에 픽셀 경계가 어긋남.
-        // 대신 뷰포트 픽셀을 cols등분 → 각 타일 중앙 픽셀 → unproject()로 좌표 변환.
-        const vpW = mapInstance.getCanvas().width;
-        const vpH = mapInstance.getCanvas().height;
-        const tileW = outW / cols;
-        const tileH = outH / cols;
-
-        // 타일 중앙 픽셀의 뷰포트 내 위치 (픽셀 단위)
-        // 출력 픽셀과 뷰포트 픽셀의 비율로 스케일
-        const scaleX = vpW / outW;
-        const scaleY = vpH / outH;
-
-        // 임시 오프스크린 맵 컨테이너 (타일 1장 크기)
-        const tempContainer = document.createElement('div');
-        tempContainer.style.cssText = `
-          position:fixed; top:-9999px; left:-9999px;
-          width:${tileW}px; height:${tileH}px;
-          visibility:hidden; pointer-events:none;
-        `;
-        document.body.appendChild(tempContainer);
-
-        const mapboxgl = (await import('mapbox-gl')).default;
-        const tempMap = new mapboxgl.Map({
-          container: tempContainer,
-          style: mapInstance.getStyle(),
-          center: center,
-          zoom: captureZoom,
-          bearing,
-          pitch,
-          interactive: false,
-          attributionControl: false,
-          preserveDrawingBuffer: true,
-        });
-
-        await new Promise<void>((res) => tempMap.on('load', res));
-
-        // 렌더 완전 안정화 대기 헬퍼
-        const waitStable = (map: typeof tempMap) =>
-          new Promise<void>((resolve) => {
-            const onIdle = () => {
-              map.off('idle', onIdle);
-              // idle 후 1프레임 더 기다려 GL 버퍼 flush 보장
-              requestAnimationFrame(() => resolve());
-            };
-            map.on('idle', onIdle);
-          });
-
-        let tileIdx = 0;
-        const total = cols * cols;
-
-        for (let row = 0; row < cols; row++) {
-          for (let col = 0; col < cols; col++) {
-            tileIdx++;
-            setProgress(`타일 캡처 ${tileIdx} / ${total}`);
-
-            // 이 타일의 중앙이 원본 뷰포트에서 몇 픽셀인지 계산
-            const centerPixelX = (col * tileW + tileW / 2) * scaleX;
-            const centerPixelY = (row * tileH + tileH / 2) * scaleY;
-
-            // 픽셀 → 지리 좌표 (Mercator 자동 보정)
-            const tileCenterLngLat = mapInstance.unproject([centerPixelX, centerPixelY]);
-
-            tempMap.jumpTo({
-              center: [tileCenterLngLat.lng, tileCenterLngLat.lat],
-              zoom: captureZoom,
-            });
-
-            await waitStable(tempMap);
-
-            const srcCanvas = tempMap.getCanvas();
-            ctx.drawImage(
-              srcCanvas,
-              col * tileW,
-              row * tileH,
-              tileW,
-              tileH,
-            );
-          }
-        }
-
-        tempMap.remove();
-        document.body.removeChild(tempContainer);
-      }
+      ctx.drawImage(srcCanvas, 0, 0, outW, outH);
 
       setProgress('저장 중...');
       const link = document.createElement('a');
-      link.download = `macro_hires_z${captureZoom.toFixed(1)}_${outW}x${outH}_${Date.now()}.png`;
+      link.download = `macro_hires_${outW}x${outH}_${Date.now()}.png`;
       link.href = outCanvas.toDataURL('image/png');
       link.click();
+
       setProgress(null);
     } catch (e) {
       console.error('HiRes capture error', e);
-      setProgress(null);
+      setProgress('오류 발생');
+      setTimeout(() => setProgress(null), 2000);
     } finally {
+      // ── 반드시 원래 ratio로 복원 ──
+      try {
+        if (typeof (mapInstance as any).setPixelRatio === 'function') {
+          (mapInstance as any).setPixelRatio(originalRatio);
+        } else {
+          (mapInstance as any)._pixelRatio = originalRatio;
+          (mapInstance as any).resize();
+        }
+        mapInstance.triggerRepaint();
+      } catch (_) {}
       setHiResCapturing(false);
     }
-  }, [mapInstance, delta, captureZoom, outW, outH, hiResCapturing, setHiResCapturing]);
+  }, [mapInstance, delta, mult, outW, outH, hiResCapturing, setHiResCapturing]);
 
   return (
     <SectionPanel sectionKey="hiResCap" title="Hi-Res Capture">
@@ -201,12 +148,12 @@ export function HiResPanel() {
         <span style={{ ...monoStyle, color: 'var(--foreground)' }}>{zoom.toFixed(1)}</span>
       </div>
 
-      {/* 캡처 줌 델타 슬라이더 */}
+      {/* 해상도 배율 슬라이더 */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={labelStyle}>Detail zoom</span>
+          <span style={labelStyle}>Scale</span>
           <span style={{ ...monoStyle, color: 'var(--accent)' }}>
-            +{delta} → z{captureZoom.toFixed(1)}
+            ×{mult} pixel ratio
           </span>
         </div>
         <div style={{ position: 'relative' }}>
@@ -220,7 +167,6 @@ export function HiResPanel() {
             onChange={(e) => handleSlider(Number(e.target.value))}
             style={{ width: '100%' }}
           />
-          {/* 스텝 라벨 */}
           <div style={{
             display: 'flex',
             justifyContent: 'space-between',
@@ -234,7 +180,7 @@ export function HiResPanel() {
                 opacity: delta === v ? 1 : 0.4,
                 fontWeight: delta === v ? 600 : 400,
               }}>
-                +{v}
+                ×{PIXEL_RATIO_MULT[v]}
               </span>
             ))}
           </div>
@@ -256,12 +202,10 @@ export function HiResPanel() {
         </span>
       </div>
 
-      {/* 타일 수 안내 (delta > 0 일 때만) */}
-      {delta > 0 && (
-        <p style={{ ...labelStyle, fontSize: '11px', color: 'var(--muted-foreground)' }}>
-          {cols}×{cols} 타일 분할 · {TILE_COUNT[delta]}장 이어붙임
-        </p>
-      )}
+      {/* 방식 안내 */}
+      <p style={{ ...labelStyle, fontSize: '11px', color: 'var(--muted-foreground)' }}>
+        단일 렌더 방식 · 타일 이음새 없음
+      </p>
 
       {/* 캡처 버튼 */}
       <button
