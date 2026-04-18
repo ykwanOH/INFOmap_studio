@@ -181,6 +181,8 @@ export function MapToastPanel() {
   } = useMapStore();
 
   const [miniReady, setMiniReady] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [saved, setSaved] = useState(false);
 
   // ── 미니맵 초기화 ──────────────────────────────────────────────────────────
   useEffect(() => {
