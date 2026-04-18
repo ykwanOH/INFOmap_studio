@@ -1,16 +1,14 @@
 /**
- * MACRO Map Studio — Hi-Res Capture Panel (v6)
+ * MACRO Map Studio — Hi-Res Capture Panel (v8)
  *
- * ── unproject 완전 폐기, MercatorCoordinate 수학으로 교체 ──
+ * ── 뷰포트 4귀퉁이 unproject + 선형보간 ──
  *
- * unproject()는 "현재 렌더된 뷰포트 픽셀 → 지리좌표" 변환이라
- * jumpTo로 center가 바뀌면 기준이 달라져 반복/어긋남이 발생.
+ * 핵심 아이디어:
+ *   1. 원본 위치에서 뷰포트 4귀퉁이 좌표를 unproject (4번만, 정확함)
+ *   2. 그 좌표들을 선형보간해서 각 타일 중앙 좌표 계산
+ *   3. jumpTo 후 unproject를 전혀 안 씀 → center 이동에 완전 독립
  *
- * 대신 Mapbox의 MercatorCoordinate를 직접 계산:
- *   1. 현재 center의 Mercator XY 구하기
- *   2. zoom 기반 meters-per-pixel 계산
- *   3. 각 타일 중앙의 픽셀 오프셋 → Mercator 오프셋 → LngLat 변환
- * → center/zoom 이동과 완전히 독립적, 항상 정확
+ * Mercator는 평면 투영이라 선형보간이 정확하게 작동함.
  */
 
 import { useCallback, useState } from 'react';
@@ -53,68 +51,50 @@ function waitStable(map: mapboxgl.Map): Promise<void> {
   });
 }
 
+function lerp(a: number, b: number, t: number) { return a + (b - a) * t; }
+
 /**
- * MercatorCoordinate 수학으로 타일 중앙 LngLat 계산.
- * unproject() 미사용 — center 이동과 완전히 독립적.
- *
- * @param centerLngLat  캡처 시작 시점의 원본 center
- * @param zoom          캡처 줌
- * @param vpW           뷰포트 CSS픽셀 너비
- * @param vpH           뷰포트 CSS픽셀 높이
- * @param col           타일 열 인덱스 (0-based)
- * @param row           타일 행 인덱스 (0-based)
- * @param cols          총 열/행 수 (2 or 4)
+ * 뷰포트 4귀퉁이를 unproject한 뒤 선형보간으로 타일 중앙 좌표 계산.
+ * 반드시 원본 위치에서 1회만 호출. jumpTo 전에 모든 좌표를 미리 뽑아둠.
  */
-function calcTileCenter(
-  centerLngLat: mapboxgl.LngLat,
-  zoom: number,
+function calcAllTileCenters(
+  map: mapboxgl.Map,
   vpW: number,
   vpH: number,
-  col: number,
-  row: number,
   cols: number,
-): mapboxgl.LngLat {
-  // 원본 center의 Mercator 좌표 (0~1 범위)
-  const mc = mapboxgl.MercatorCoordinate.fromLngLat(centerLngLat);
+): mapboxgl.LngLat[][] {
+  // 4귀퉁이 unproject (원본 center/zoom 기준, 정확)
+  const tl = map.unproject([0,    0   ]);  // top-left
+  const tr = map.unproject([vpW,  0   ]);  // top-right
+  const bl = map.unproject([0,    vpH ]);  // bottom-left
+  const br = map.unproject([vpW,  vpH ]);  // bottom-right
 
-  // zoom 레벨에서 CSS픽셀 1개당 Mercator 단위
-  // Mercator 전체 = 1.0, 타일 256px 기준: meterPerPx = 1 / (256 * 2^zoom)
-  const worldSize = 512 * Math.pow(2, zoom); // CSS픽셀 기준 전체 월드 크기
-  const mercPerPx = 1.0 / worldSize;
+  return Array.from({ length: cols }, (_, row) =>
+    Array.from({ length: cols }, (_, col) => {
+      // 타일 중앙의 정규화된 위치 (0~1)
+      const tx = (col * (vpW / cols) + (vpW / cols) / 2) / vpW;
+      const ty = (row * (vpH / cols) + (vpH / cols) / 2) / vpH;
 
-  // 타일 1장의 CSS픽셀 크기
-  const tileW = vpW / cols;
-  const tileH = vpH / cols;
+      // 선형보간: 상단 엣지, 하단 엣지, 최종
+      const topLng = lerp(tl.lng, tr.lng, tx);
+      const topLat = lerp(tl.lat, tr.lat, tx);
+      const botLng = lerp(bl.lng, br.lng, tx);
+      const botLat = lerp(bl.lat, br.lat, tx);
 
-  // 이 타일 중앙의 원본 center로부터의 CSS픽셀 오프셋
-  // (원본 center = 뷰포트 정중앙)
-  const dxPx = (col - (cols - 1) / 2) * tileW;  // 좌우 오프셋
-  const dyPx = (row - (cols - 1) / 2) * tileH;  // 상하 오프셋
-
-  // 픽셀 오프셋 → Mercator 오프셋
-  const newMcX = mc.x + dxPx * mercPerPx;
-  const newMcY = mc.y + dyPx * mercPerPx;
-
-  // Mercator → LngLat
-  const newMc = new mapboxgl.MercatorCoordinate(newMcX, newMcY, mc.z);
-  return newMc.toLngLat();
+      return new mapboxgl.LngLat(
+        lerp(topLng, botLng, ty),
+        lerp(topLat, botLat, ty),
+      );
+    })
+  );
 }
 
-/** drawImage용 센터크롭 파라미터 계산 (비율 왜곡 방지) */
-function getCropParams(
-  srcW: number, srcH: number,
-  dstW: number, dstH: number,
-): { sx: number; sy: number; sw: number; sh: number } {
+function getCropParams(srcW: number, srcH: number, dstW: number, dstH: number) {
   const srcAR = srcW / srcH;
   const dstAR = dstW / dstH;
   let sx = 0, sy = 0, sw = srcW, sh = srcH;
-  if (srcAR > dstAR) {
-    sw = Math.round(srcH * dstAR);
-    sx = Math.round((srcW - sw) / 2);
-  } else if (srcAR < dstAR) {
-    sh = Math.round(srcW / dstAR);
-    sy = Math.round((srcH - sh) / 2);
-  }
+  if (srcAR > dstAR) { sw = Math.round(srcH * dstAR); sx = Math.round((srcW - sw) / 2); }
+  else if (srcAR < dstAR) { sh = Math.round(srcW / dstAR); sy = Math.round((srcH - sh) / 2); }
   return { sx, sy, sw, sh };
 }
 
@@ -132,21 +112,19 @@ export function HiResPanel() {
 
   const delta = hiResZoomDelta as 0 | 1 | 2;
   const cols  = TILE_COLS[delta];
-  const outW  = 1920 * cols;  // 목표 출력 폭
-  const outH  = 1080 * cols;  // 목표 출력 높이
+  const outW  = 1920 * cols;
+  const outH  = 1080 * cols;
 
   const handleCapture = useCallback(async () => {
     if (!mapInstance || hiResCapturing) return;
     setHiResCapturing(true);
     setProgress('준비 중...');
 
-    // 원본 상태 — 복원 및 좌표 계산 기준
     const origCenter  = mapInstance.getCenter();
     const origZoom    = mapInstance.getZoom();
     const origBearing = mapInstance.getBearing();
     const origPitch   = mapInstance.getPitch();
 
-    // 뷰포트 CSS픽셀 크기
     const container = mapInstance.getContainer();
     const vpW = container.clientWidth;
     const vpH = container.clientHeight;
@@ -158,7 +136,6 @@ export function HiResPanel() {
       const ctx = outCanvas.getContext('2d')!;
 
       if (delta === 0) {
-        // ── FHD: 단일 캡처 ──────────────────────────────────────────
         setProgress('캡처 중...');
         await waitStable(mapInstance);
         const cv = mapInstance.getCanvas();
@@ -166,23 +143,18 @@ export function HiResPanel() {
         ctx.drawImage(cv, sx, sy, sw, sh, 0, 0, outW, outH);
 
       } else {
-        // ── 4K/8K: MercatorCoordinate 기반 타일 분할 캡처 ──────────
-        // 타일 중앙 좌표를 모두 사전 계산 (원본 center 기준, jumpTo 전)
-        const tileCenters: mapboxgl.LngLat[][] = Array.from({ length: cols }, (_, row) =>
-          Array.from({ length: cols }, (_, col) =>
-            calcTileCenter(origCenter, origZoom, vpW, vpH, col, row, cols)
-          )
-        );
+        // ── 핵심: 원본 위치에서 전체 타일 좌표 한 번에 계산 ─────────
+        const tileCenters = calcAllTileCenters(mapInstance, vpW, vpH, cols);
 
-        const tileOutW = outW / cols;  // = 1920
-        const tileOutH = outH / cols;  // = 1080
+        const tileOutW = outW / cols;  // 1920
+        const tileOutH = outH / cols;  // 1080
         const total = cols * cols;
-        let tileIdx = 0;
+        let idx = 0;
 
         for (let row = 0; row < cols; row++) {
           for (let col = 0; col < cols; col++) {
-            tileIdx++;
-            setProgress(`타일 ${tileIdx} / ${total} 캡처 중...`);
+            idx++;
+            setProgress(`타일 ${idx} / ${total} 캡처 중...`);
 
             mapInstance.jumpTo({
               center: tileCenters[row][col],
@@ -195,8 +167,7 @@ export function HiResPanel() {
             const cv = mapInstance.getCanvas();
             const { sx, sy, sw, sh } = getCropParams(cv.width, cv.height, tileOutW, tileOutH);
             ctx.drawImage(
-              cv,
-              sx, sy, sw, sh,
+              cv, sx, sy, sw, sh,
               col * tileOutW, row * tileOutH,
               tileOutW, tileOutH,
             );
