@@ -200,7 +200,9 @@ export function MapToastPanel() {
     mini.on('load', () => {
       miniLoadedRef.current = true;
       const store = useMapStore.getState();
-      applySchemeToMini(mini, store.mapToastScheme, store.showRoads, store.borders.country.color, store.borders.country.width);
+      applySchemeToMini(mini, store.mapToastScheme, store.showRoads,
+        store.borderTouched ? store.borders.country.color : '#FFFFFF',
+        store.borders.country.width);
       // 스킴 적용 완료 후 표시 — 기본 Mapbox 테마 노출 방지
       setMiniReady(true);
     });
@@ -216,7 +218,10 @@ export function MapToastPanel() {
   useEffect(() => {
     const mini = miniMapRef.current;
     if (!mini || !miniLoadedRef.current) return;
-    applySchemeToMini(mini, mapToastScheme, showRoads, borders.country.color, borders.country.width);
+    const { borderTouched } = useMapStore.getState();
+    applySchemeToMini(mini, mapToastScheme, showRoads,
+      borderTouched ? borders.country.color : '#FFFFFF',
+      borders.country.width);
   }, [mapToastScheme, showRoads, borders]);
 
   // ── A. 동기화: 메인맵 이동·pitch 따라감 ──────────────────────────────────

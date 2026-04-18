@@ -18,7 +18,6 @@ import { useCallback, useState } from 'react';
 import { useMapStore } from '@/store/useMapStore';
 import { SectionPanel } from '@/components/ui/SectionPanel';
 import { Download } from 'lucide-react';
-import mapboxgl from 'mapbox-gl';
 
 const labelStyle = {
   fontFamily: "'DM Sans', sans-serif",
@@ -36,28 +35,7 @@ const monoStyle = {
 } as const;
 
 const MULT: Record<0 | 1 | 2, number> = { 0: 1, 1: 2, 2: 4 };
-const MULT_LABEL: Record<0 | 1 | 2, string> = {
-  0: '현재 해상도  ×1',
-  1: '고해상도     ×2',
-  2: '초고해상도   ×4',
-};
 
-function waitIdle(map: mapboxgl.Map): Promise<void> {
-  return new Promise((resolve) => {
-    // render 이벤트가 N프레임 동안 안 오면 완료
-    let timer: ReturnType<typeof setTimeout>;
-    const reset = () => {
-      clearTimeout(timer);
-      timer = setTimeout(() => {
-        map.off('render', reset);
-        resolve();
-      }, 120); // 120ms 동안 추가 render 없으면 안정
-    };
-    map.on('render', reset);
-    map.triggerRepaint();
-    reset(); // 초기 타이머 시작
-  });
-}
 
 export function HiResPanel() {
   const {
@@ -77,46 +55,28 @@ export function HiResPanel() {
   const handleCapture = useCallback(async () => {
     if (!mapInstance || hiResCapturing) return;
     setHiResCapturing(true);
-    setProgress('렌더링 중...');
-
-    // 현재 pixelRatio 저장
-    const origRatio: number =
-      (mapInstance as any)._pixelRatio ??
-      window.devicePixelRatio ?? 1;
+    setProgress('캡처 중...');
 
     try {
-      if (mult === 1) {
-        // ×1: 그냥 현재 캔버스 저장
-        await waitIdle(mapInstance);
-      } else {
-        // ×N: pixelRatio 올려서 고해상도 렌더
-        if (typeof (mapInstance as any).setPixelRatio === 'function') {
-          (mapInstance as any).setPixelRatio(origRatio * mult);
-        } else {
-          (mapInstance as any)._pixelRatio = origRatio * mult;
-          (mapInstance as any).resize();
-        }
-        await waitIdle(mapInstance);
-      }
+      const src = mapInstance.getCanvas();
+      const outW = src.width  * mult;
+      const outH = src.height * mult;
+
+      const out = document.createElement('canvas');
+      out.width  = outW;
+      out.height = outH;
+      const ctx = out.getContext('2d')!;
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(src, 0, 0, outW, outH);
 
       setProgress('저장 중...');
-
-      // 캔버스 전체를 그대로 저장 (비율 강제 안 함)
-      const cv = mapInstance.getCanvas();
-      const outCanvas = document.createElement('canvas');
-      outCanvas.width  = cv.width;
-      outCanvas.height = cv.height;
-      outCanvas.getContext('2d')!.drawImage(cv, 0, 0);
-
-      const w = cv.width;
-      const h = cv.height;
-
-      outCanvas.toBlob(blob => {
+      out.toBlob(blob => {
         if (!blob) return;
         const url = URL.createObjectURL(blob);
         const a = Object.assign(document.createElement('a'), {
           href: url,
-          download: `macro_hires_${w}x${h}_${Date.now()}.png`,
+          download: `macro_hires_${outW}x${outH}_${Date.now()}.png`,
         });
         document.body.appendChild(a); a.click();
         document.body.removeChild(a);
@@ -129,21 +89,9 @@ export function HiResPanel() {
       setProgress(`오류: ${e.message}`);
       setTimeout(() => setProgress(null), 3000);
     } finally {
-      // pixelRatio 원복
-      if (mult > 1) {
-        try {
-          if (typeof (mapInstance as any).setPixelRatio === 'function') {
-            (mapInstance as any).setPixelRatio(origRatio);
-          } else {
-            (mapInstance as any)._pixelRatio = origRatio;
-            (mapInstance as any).resize();
-          }
-          mapInstance.triggerRepaint();
-        } catch (_) {}
-      }
       setHiResCapturing(false);
     }
-  }, [mapInstance, delta, mult, hiResCapturing, setHiResCapturing]);
+  }, [mapInstance, mult, hiResCapturing, setHiResCapturing]);
 
   // 예상 출력 크기 계산 (현재 캔버스 기준)
   const canvasW = mapInstance?.getCanvas().width  ?? 0;
@@ -185,7 +133,7 @@ export function HiResPanel() {
 
       {/* 설명 */}
       <div style={{ ...labelStyle, fontSize: '11px', color: 'var(--muted-foreground)' }}>
-        {MULT_LABEL[delta]}
+        ×{mult} 업스케일
       </div>
 
       {/* 예상 출력 크기 */}

@@ -97,6 +97,7 @@ export interface MapStoreState {
 
   // ── Border ──
   borders: Record<BorderLevel, BorderConfig>;
+  borderTouched: boolean;  // 보더 슬라이더/토글을 한 번이라도 건드렸는지
   setBorderEnabled: (level: BorderLevel, enabled: boolean) => void;
   setBorderColor: (level: BorderLevel, color: string) => void;
   setBorderWidth: (level: BorderLevel, width: number) => void;
@@ -257,16 +258,20 @@ export const useMapStore = create<MapStoreState>((set, get) => ({
 
   // ── Border ──
   borders: { ...DEFAULT_BORDERS },
+  borderTouched: false,
   setBorderEnabled: (level, enabled) =>
     set((state) => ({
+      borderTouched: true,
       borders: { ...state.borders, [level]: { ...state.borders[level], enabled } },
     })),
   setBorderColor: (level, color) =>
     set((state) => ({
+      borderTouched: true,
       borders: { ...state.borders, [level]: { ...state.borders[level], color } },
     })),
   setBorderWidth: (level, width) =>
     set((state) => ({
+      borderTouched: true,
       borders: { ...state.borders, [level]: { ...state.borders[level], width } },
     })),
 
