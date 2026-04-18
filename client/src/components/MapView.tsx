@@ -119,7 +119,7 @@ export default function MapView() {
       zoom: 4.5,
       pitch: 0,                // 2D CAM 직부감
       bearing: 0,
-      projection: 'globe' as any,
+      projection: 'mercator',
       antialias: true,
       preserveDrawingBuffer: true,
     });

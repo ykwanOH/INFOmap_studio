@@ -195,6 +195,7 @@ export function MapToastPanel() {
       interactive: false,
       attributionControl: false,
       preserveDrawingBuffer: true,
+      projection: 'mercator' as any,
     });
     mini.on('load', () => {
       miniLoadedRef.current = true;

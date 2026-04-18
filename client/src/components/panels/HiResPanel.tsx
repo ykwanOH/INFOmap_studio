@@ -1,24 +1,23 @@
 /**
- * MACRO Map Studio — Hi-Res Capture Panel (v2)
+ * MACRO Map Studio — Hi-Res Capture Panel (v3)
  *
- * ── 이전 방식의 문제 ──
- * 타일 분할: 오프스크린 tempMap을 여러 장 찍어 붙이는 방식
- * → 각 타일 캡처마다 GL 컨텍스트가 달라 이음새 어긋남(타일링 아티팩트) 발생
+ * ── Mercator 기반 타일링 방식 ──
+ * projection이 mercator(평면)로 바뀌면서 픽셀↔좌표 변환이 선형.
+ * → 타일 분할 캡처가 정확히 맞아떨어짐 (이음새 없음)
  *
- * ── 새 방식 ──
- * 메인 맵의 devicePixelRatio를 직접 높여 캔버스를 확대 렌더링 후,
- * 단일 이미지로 캡처하고 원래 ratio로 복원.
- * → 타일 이음새 없음, 동일 뷰 그대로 고해상도 출력
+ * delta=0: FHD  1920×1080  (단일 캡처)
+ * delta=1: 4K   3840×2160  (2×2 = 4타일)
+ * delta=2: 8K   7680×4320  (4×4 = 16타일)
  *
- * delta=0: ratio×1 → FHD  (1920×1080)
- * delta=1: ratio×2 → 4K   (3840×2160)
- * delta=2: ratio×4 → 8K   (7680×4320)
+ * 각 타일은 메인 맵과 동일한 스타일·줌으로 오프스크린 렌더링.
+ * unproject()로 타일 중앙 좌표를 계산 → Mercator에서 픽셀 경계 정확 일치.
  */
 
 import { useCallback, useState } from 'react';
 import { useMapStore } from '@/store/useMapStore';
 import { SectionPanel } from '@/components/ui/SectionPanel';
 import { Download } from 'lucide-react';
+import mapboxgl from 'mapbox-gl';
 
 const labelStyle = {
   fontFamily: "'DM Sans', sans-serif",
@@ -41,12 +40,23 @@ const RESOLUTION_LABEL: Record<0 | 1 | 2, string> = {
   2: '8K   7680 × 4320',
 };
 
-// delta별 pixelRatio 배율
-const PIXEL_RATIO_MULT: Record<0 | 1 | 2, number> = {
+const TILE_COLS: Record<0 | 1 | 2, number> = {
   0: 1,
   1: 2,
   2: 4,
 };
+
+// 렌더 완전 안정화 대기: idle + 2프레임
+function waitStable(map: mapboxgl.Map): Promise<void> {
+  return new Promise((resolve) => {
+    const onIdle = () => {
+      map.off('idle', onIdle);
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    };
+    map.on('idle', onIdle);
+    map.triggerRepaint();
+  });
+}
 
 export function HiResPanel() {
   const {
@@ -61,9 +71,11 @@ export function HiResPanel() {
   const [progress, setProgress] = useState<string | null>(null);
 
   const delta = hiResZoomDelta as 0 | 1 | 2;
-  const mult = PIXEL_RATIO_MULT[delta];
-  const outW = 1920 * mult;
-  const outH = 1080 * mult;
+  const cols = TILE_COLS[delta];
+  const outW = 1920 * cols;
+  const outH = 1080 * cols;
+  const tileW = 1920;
+  const tileH = 1080;
 
   const handleSlider = (raw: number) => {
     const snapped = Math.round(raw) as 0 | 1 | 2;
@@ -75,89 +87,108 @@ export function HiResPanel() {
     setHiResCapturing(true);
     setProgress('준비 중...');
 
-    // 원래 pixelRatio 저장
-    const originalRatio: number =
-      (mapInstance as any)._pixelRatio ??
-      window.devicePixelRatio ??
-      1;
-
     try {
-      setProgress('고해상도 렌더링 중...');
+      const center  = mapInstance.getCenter();
+      const bearing = mapInstance.getBearing();
+      const pitch   = mapInstance.getPitch();
+      const style   = mapInstance.getStyle();
 
-      // ── pixelRatio 오버라이드: 캔버스 자체를 mult배로 확대 렌더 ──
-      // setPixelRatio는 Mapbox GL v2.4+에서 공식 지원
-      if (typeof (mapInstance as any).setPixelRatio === 'function') {
-        (mapInstance as any).setPixelRatio(originalRatio * mult);
-      } else {
-        // fallback: 내부 프로퍼티 직접 조작
-        (mapInstance as any)._pixelRatio = originalRatio * mult;
-        (mapInstance as any).resize();
-      }
-
-      // 렌더 완전 안정화 대기: idle + 2프레임
-      await new Promise<void>((resolve) => {
-        const onIdle = () => {
-          mapInstance.off('idle', onIdle);
-          requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-        };
-        mapInstance.on('idle', onIdle);
-        mapInstance.triggerRepaint();
-      });
-
-      setProgress('캔버스 읽는 중...');
-
-      // 확대된 캔버스에서 단일 이미지 추출
-      // ── 비율 보정: srcCanvas는 브라우저 창 비율 × mult 크기
-      //    outW×outH(16:9)와 비율이 다를 수 있으므로 센터 크롭으로 맞춤
-      const srcCanvas = mapInstance.getCanvas();
-      const srcW = srcCanvas.width;
-      const srcH = srcCanvas.height;
-      const targetRatio = outW / outH;        // 16:9 = 1.777...
-      const srcRatio    = srcW / srcH;
-
-      let cropX = 0, cropY = 0, cropW = srcW, cropH = srcH;
-      if (srcRatio > targetRatio) {
-        // 소스가 더 넓음 → 좌우 크롭
-        cropW = Math.round(srcH * targetRatio);
-        cropX = Math.round((srcW - cropW) / 2);
-      } else if (srcRatio < targetRatio) {
-        // 소스가 더 높음 → 상하 크롭
-        cropH = Math.round(srcW / targetRatio);
-        cropY = Math.round((srcH - cropH) / 2);
-      }
-
+      // 출력 캔버스
       const outCanvas = document.createElement('canvas');
       outCanvas.width  = outW;
       outCanvas.height = outH;
       const ctx = outCanvas.getContext('2d')!;
-      // sx,sy,sW,sH → dx,dy,dW,dH : 크롭 영역을 정확히 outW×outH로 스트레치
-      ctx.drawImage(srcCanvas, cropX, cropY, cropW, cropH, 0, 0, outW, outH);
+
+      if (delta === 0) {
+        // ── 단일 캡처 (FHD) ───────────────────────────────────────────────
+        setProgress('캡처 중...');
+        await waitStable(mapInstance);
+        ctx.drawImage(mapInstance.getCanvas(), 0, 0, tileW, tileH);
+
+      } else {
+        // ── 타일 분할 캡처 (Mercator 기준 픽셀 선형 계산) ────────────────
+        const vpW = mapInstance.getCanvas().width;
+        const vpH = mapInstance.getCanvas().height;
+
+        // 뷰포트 픽셀 → 출력 픽셀 스케일
+        const scaleX = vpW / outW;
+        const scaleY = vpH / outH;
+
+        // 오프스크린 컨테이너 (타일 1장 = 1920×1080)
+        const tempContainer = document.createElement('div');
+        tempContainer.style.cssText = `
+          position:fixed; top:-9999px; left:-9999px;
+          width:${tileW}px; height:${tileH}px;
+          visibility:hidden; pointer-events:none;
+        `;
+        document.body.appendChild(tempContainer);
+
+        const tempMap = new mapboxgl.Map({
+          container: tempContainer,
+          style,
+          center,
+          zoom,
+          bearing,
+          pitch,
+          interactive: false,
+          attributionControl: false,
+          preserveDrawingBuffer: true,
+          projection: 'mercator' as any,
+        });
+
+        await new Promise<void>((res) => tempMap.on('load', res));
+        await waitStable(tempMap);
+
+        const total = cols * cols;
+        let tileIdx = 0;
+
+        for (let row = 0; row < cols; row++) {
+          for (let col = 0; col < cols; col++) {
+            tileIdx++;
+            setProgress(`타일 ${tileIdx} / ${total} 캡처 중...`);
+
+            // 타일 중앙의 출력 픽셀 위치 → 뷰포트 픽셀로 환산
+            const centerPxX = (col * tileW + tileW / 2) * scaleX;
+            const centerPxY = (row * tileH + tileH / 2) * scaleY;
+
+            // Mercator: unproject 선형 → 타일 경계 정확히 일치
+            const tileLngLat = mapInstance.unproject([centerPxX, centerPxY]);
+
+            tempMap.jumpTo({
+              center: [tileLngLat.lng, tileLngLat.lat],
+              zoom,
+            });
+
+            await waitStable(tempMap);
+
+            const srcCv = tempMap.getCanvas();
+            ctx.drawImage(
+              srcCv,
+              0, 0, srcCv.width, srcCv.height,
+              col * tileW, row * tileH, tileW, tileH,
+            );
+          }
+        }
+
+        tempMap.remove();
+        document.body.removeChild(tempContainer);
+      }
 
       setProgress('저장 중...');
       const link = document.createElement('a');
       link.download = `macro_hires_${outW}x${outH}_${Date.now()}.png`;
       link.href = outCanvas.toDataURL('image/png');
       link.click();
-
       setProgress(null);
+
     } catch (e) {
       console.error('HiRes capture error', e);
       setProgress('오류 발생');
       setTimeout(() => setProgress(null), 2000);
     } finally {
-      // ── 반드시 원래 ratio로 복원 ──
-      try {
-        if (typeof (mapInstance as any).setPixelRatio === 'function') {
-          (mapInstance as any).setPixelRatio(originalRatio);
-        } else {
-          (mapInstance as any)._pixelRatio = originalRatio;
-          (mapInstance as any).resize();
-        }
-        mapInstance.triggerRepaint();
-      } catch (_) {}
       setHiResCapturing(false);
     }
-  }, [mapInstance, delta, mult, outW, outH, hiResCapturing, setHiResCapturing]);
+  }, [mapInstance, delta, cols, zoom, outW, outH, tileW, tileH, hiResCapturing, setHiResCapturing]);
 
   return (
     <SectionPanel sectionKey="hiResCap" title="Hi-Res Capture">
@@ -167,12 +198,12 @@ export function HiResPanel() {
         <span style={{ ...monoStyle, color: 'var(--foreground)' }}>{zoom.toFixed(1)}</span>
       </div>
 
-      {/* 해상도 배율 슬라이더 */}
+      {/* 해상도 슬라이더 */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={labelStyle}>Scale</span>
+          <span style={labelStyle}>Resolution</span>
           <span style={{ ...monoStyle, color: 'var(--accent)' }}>
-            ×{mult} pixel ratio
+            {cols}×{cols}{delta > 0 ? ` (${cols * cols}tiles)` : ''}
           </span>
         </div>
         <div style={{ position: 'relative' }}>
@@ -192,14 +223,14 @@ export function HiResPanel() {
             marginTop: '2px',
             padding: '0 2px',
           }}>
-            {([0, 1, 2] as const).map((v) => (
+            {(['FHD', '4K', '8K'] as const).map((label, v) => (
               <span key={v} style={{
                 ...monoStyle,
                 fontSize: '10px',
                 opacity: delta === v ? 1 : 0.4,
                 fontWeight: delta === v ? 600 : 400,
               }}>
-                ×{PIXEL_RATIO_MULT[v]}
+                {label}
               </span>
             ))}
           </div>
@@ -221,10 +252,12 @@ export function HiResPanel() {
         </span>
       </div>
 
-      {/* 방식 안내 */}
-      <p style={{ ...labelStyle, fontSize: '11px', color: 'var(--muted-foreground)' }}>
-        단일 렌더 방식 · 타일 이음새 없음
-      </p>
+      {/* 타일 안내 */}
+      {delta > 0 && (
+        <p style={{ ...labelStyle, fontSize: '11px', color: 'var(--muted-foreground)' }}>
+          Mercator 타일링 · {cols * cols}장 이어붙임
+        </p>
+      )}
 
       {/* 캡처 버튼 */}
       <button
