@@ -170,8 +170,8 @@ export interface MapStoreState {
 
 // 새 기본 컬러값 (요청 #12)
 const DEFAULT_COLORS: ColorConfig = {
-  landmass:   '#E9E4E0',
-  hydro:      '#BAC1D3',
+  landmass:   '#DFD7BF',
+  hydro:      '#79A9CD',
   green:      '#B3BDA3',
   expressway: '#ECECEC',
   streetroad: '#E8E2E0',
