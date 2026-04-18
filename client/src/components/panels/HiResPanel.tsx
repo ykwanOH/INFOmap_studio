@@ -1,22 +1,20 @@
 /**
- * MACRO Map Studio — Hi-Res Capture Panel (v10 · Static API)
+ * MACRO Map Studio — Hi-Res Capture Panel (v12)
  *
- * ── GL 캔버스 캡처 방식 완전 폐기 ──
- * jumpTo / waitStable / GL 렌더 타이밍 문제 → 모두 제거
+ * ── 원칙 ──
+ * 범위: 현재 뷰포트의 지리 좌표 bbox (화면 픽셀/배율 무관)
+ * 디테일: mapZoom + delta (더 선명한 줌으로 찍음)
  *
- * ── 새 방식: Mapbox Static Images API ──
- * 1. 현재 뷰 중앙 기준으로 16:9 bbox 계산
- * 2. bbox를 cols×rows 타일로 분할
- * 3. 각 타일 중앙 좌표로 Static API 호출 (서버 렌더 PNG)
- * 4. TILE_OVERLAP_PX 오버랩으로 요청 → 중앙만 잘라 Canvas에 합성
- *    → 이음새 완벽 처리
+ * 참조 사이트(ncg-map-capture)와 동일한 로직:
+ *   bbox 경위도 → Mercator XY → 타일 분할 → Static API 요청
+ *   단, bbox를 드래그 대신 "현재 뷰 4귀퉁이 unproject"로 자동 설정
  *
- * delta=0: FHD  1920×1080  (2×2 타일)
- * delta=1: 4K   3840×2160  (4×4 타일)
- * delta=2: 8K   7680×4320  (8×8 타일)
+ * delta=0: zoom +0 → 현재 해상도 그대로 (FHD)
+ * delta=1: zoom +1 → 2배 선명
+ * delta=2: zoom +2 → 4배 선명
  *
- * 각 타일 = 640×640 논리px (@2x → 1280×1280 실제px)
- * 오버랩 160px → 요청 960×960, 중앙 1280×1280px만 사용
+ * 출력 크기: bbox 비율 × 디테일 줌에 맞는 픽셀 수
+ * (정확히 16:9가 아닐 수 있으나 현재 뷰를 가장 정확히 반영)
  */
 
 import { useCallback, useState } from 'react';
@@ -40,30 +38,30 @@ const monoStyle = {
   color: 'var(--section-label-color)',
 } as const;
 
-const RESOLUTION_LABEL: Record<0 | 1 | 2, string> = {
-  0: 'FHD  1920 × 1080',
-  1: '4K   3840 × 2160',
-  2: '8K   7680 × 4320',
+// delta별 줌 증가량
+const ZOOM_DELTA: Record<0 | 1 | 2, number> = { 0: 0, 1: 1, 2: 2 };
+const DELTA_LABEL: Record<0 | 1 | 2, string> = {
+  0: '현재 줌  ×1',
+  1: '+1 zoom  ×2',
+  2: '+2 zoom  ×4',
 };
 
-// delta별 타일 열/행 수
-const TILE_COLS: Record<0 | 1 | 2, number> = { 0: 2, 1: 4, 2: 8 };
+// Static API 파라미터 (참조 사이트와 동일)
+const TILE_SIZE    = 640;                        // 타일 논리 크기 (px)
+const OVERLAP_PX   = 160;                        // 오버랩 (논리px)
+const REQ_SIZE     = TILE_SIZE + OVERLAP_PX * 2; // 960 — API 요청 크기
+const ACTUAL_PX    = TILE_SIZE * 2;              // 1280 — @2x 물리px
+const CROP_PX      = OVERLAP_PX * 2;             // 320 — 크롭 물리px
+const TILE_UNITS   = TILE_SIZE / 512;            // Mercator 단위/타일
+const CONCURRENCY  = 4;
+const MAX_TILES    = 200;
 
-// Static API 파라미터
-const TILE_SIZE       = 640;          // 타일 논리 크기 (px)
-const OVERLAP_PX      = 160;          // 각 변 오버랩 (논리px)
-const REQ_SIZE        = TILE_SIZE + OVERLAP_PX * 2;  // 960 — 실제 요청 크기
-const ACTUAL_PX       = TILE_SIZE * 2;               // 1280 — @2x 실제 출력 px
-const CROP_PX         = OVERLAP_PX * 2;              // 320 — @2x 잘라낼 양쪽 px
-const CONCURRENCY     = 4;
-
-// 스타일 ID (mapbox://styles/ 뒤 부분)
 const STYLE_IDS: Record<string, string> = {
   vector:    'mapbox/streets-v12',
   satellite: 'mapbox/satellite-streets-v12',
 };
 
-// ── 좌표 변환 (Mercator 타일 수학) ──────────────────────────────────────────
+// ── Mercator 좌표 변환 ──────────────────────────────────────────────────────
 
 function lngLatToXY(lng: number, lat: number, zoom: number) {
   const scale = Math.pow(2, zoom);
@@ -76,11 +74,11 @@ function lngLatToXY(lng: number, lat: number, zoom: number) {
 function xyToLngLat(x: number, y: number, zoom: number) {
   const scale = Math.pow(2, zoom);
   const lng = x / scale * 360 - 180;
-  const latRad = Math.atan(Math.sinh(Math.PI * (1 - 2 * y / scale)));
-  return { lng, lat: latRad * 180 / Math.PI };
+  const lat = Math.atan(Math.sinh(Math.PI * (1 - 2 * y / scale))) * 180 / Math.PI;
+  return { lng, lat };
 }
 
-// ── Static API 타일 1장 fetch ────────────────────────────────────────────────
+// ── Static API 타일 fetch ───────────────────────────────────────────────────
 
 function fetchTile(
   lng: number, lat: number, zoom: number,
@@ -89,7 +87,7 @@ function fetchTile(
 ): Promise<HTMLImageElement> {
   const url =
     `https://api.mapbox.com/styles/v1/${styleId}/static/` +
-    `${lng.toFixed(6)},${lat.toFixed(6)},${zoom}/` +
+    `${lng.toFixed(6)},${lat.toFixed(6)},${zoom.toFixed(2)}/` +
     `${REQ_SIZE}x${REQ_SIZE}@2x` +
     `?access_token=${token}&attribution=false&logo=false`;
 
@@ -123,12 +121,10 @@ export function HiResPanel() {
 
   const [progress, setProgress] = useState<string | null>(null);
   const [progPct,  setProgPct ] = useState(0);
+  const [estInfo,  setEstInfo ] = useState<string | null>(null);
 
   const delta = hiResZoomDelta as 0 | 1 | 2;
-  const cols  = TILE_COLS[delta];   // 열 = 행 (정사각 그리드)
-  // 출력 크기: cols타일 × ACTUAL_PX px/타일
-  const outW  = cols * ACTUAL_PX;   // 2560 / 5120 / 10240
-  const outH  = Math.round(outW * 9 / 16); // 16:9 고정
+  const captureZoom = zoom + ZOOM_DELTA[delta];
 
   const handleCapture = useCallback(async () => {
     if (!mapInstance || hiResCapturing) return;
@@ -140,37 +136,57 @@ export function HiResPanel() {
       const token   = (mapboxgl as any).accessToken as string;
       const styleId = STYLE_IDS[mapStyle] ?? STYLE_IDS.vector;
 
-      // ── 현재 뷰 중앙 + 줌 ─────────────────────────────────────────────
-      const center   = mapInstance.getCenter();
-      const captureZ = mapInstance.getZoom();
+      // ── 현재 뷰 bbox (지리 좌표로 변환) ────────────────────────────
+      // unproject는 현재 뷰포트 CSS픽셀 → LngLat
+      // 지리 좌표 기반이므로 화면 배율(125% 등) 무관
+      const container = mapInstance.getContainer();
+      const vpW = container.clientWidth;
+      const vpH = container.clientHeight;
 
-      // TILE_UNITS: 1타일이 커버하는 Mercator 단위 (zoom 기준)
-      const TILE_UNITS = TILE_SIZE / 512;
+      const tl = mapInstance.unproject([0,   0  ]);
+      const br = mapInstance.unproject([vpW, vpH]);
 
-      // 중앙 Mercator 좌표
-      const mc = lngLatToXY(center.lng, center.lat, captureZ);
+      const bbox = {
+        west:  Math.min(tl.lng, br.lng),
+        east:  Math.max(tl.lng, br.lng),
+        north: Math.max(tl.lat, br.lat),
+        south: Math.min(tl.lat, br.lat),
+      };
 
-      // bbox: cols×rows 타일 그리드가 중앙에 오도록 설정 (16:9)
-      const rows = Math.round(cols * 9 / 16);   // 9/16 비율 행 수
-      const halfW = (cols / 2) * TILE_UNITS;
-      const halfH = (rows / 2) * TILE_UNITS;
+      // ── captureZoom 기준 Mercator XY ────────────────────────────────
+      const z = captureZoom;
+      const nw = lngLatToXY(bbox.west,  bbox.north, z);
+      const se = lngLatToXY(bbox.east,  bbox.south, z);
 
-      const nwX = mc.x - halfW;
-      const nwY = mc.y - halfH;
+      // 타일 수 계산 (참조 사이트와 동일 공식)
+      const cols  = Math.max(1, Math.ceil((se.x - nw.x) / TILE_UNITS));
+      const rows  = Math.max(1, Math.ceil((se.y - nw.y) / TILE_UNITS));
+      const total = cols * rows;
 
-      // ── 타일 목록 생성 ────────────────────────────────────────────────
+      // 출력 픽셀 크기 (bbox 정확한 비율)
+      const exactW = Math.round((se.x - nw.x) / TILE_UNITS * ACTUAL_PX);
+      const exactH = Math.round((se.y - nw.y) / TILE_UNITS * ACTUAL_PX);
+
+      if (total > MAX_TILES) {
+        setProgress(`타일 수 초과 (${total}개). 줌을 올리거나 delta를 낮추세요.`);
+        setTimeout(() => setProgress(null), 3000);
+        return;
+      }
+
+      setEstInfo(`${cols}×${rows} = ${total}타일 → ${exactW}×${exactH}px`);
+
+      // ── 타일 목록 ────────────────────────────────────────────────────
       const tiles: { lng: number; lat: number; row: number; col: number }[] = [];
       for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
-          const cx = nwX + (c + 0.5) * TILE_UNITS;
-          const cy = nwY + (r + 0.5) * TILE_UNITS;
-          const { lng, lat } = xyToLngLat(cx, cy, captureZ);
+          const cx = nw.x + (c + 0.5) * TILE_UNITS;
+          const cy = nw.y + (r + 0.5) * TILE_UNITS;
+          const { lng, lat } = xyToLngLat(cx, cy, z);
           tiles.push({ lng, lat, row: r, col: c });
         }
       }
 
-      // ── Canvas 준비 ───────────────────────────────────────────────────
-      // 그리드 전체 크기 (나중에 exact 크기로 크롭)
+      // ── Canvas 준비 ────────────────────────────────────────────────
       const gridW = cols * ACTUAL_PX;
       const gridH = rows * ACTUAL_PX;
       const canvas = document.createElement('canvas');
@@ -178,52 +194,44 @@ export function HiResPanel() {
       canvas.height = gridH;
       const ctx = canvas.getContext('2d')!;
 
-      const total = tiles.length;
       let fetched = 0;
 
-      // ── 타일 병렬 fetch & 합성 ────────────────────────────────────────
+      // ── 병렬 fetch & 합성 ────────────────────────────────────────
       for (let i = 0; i < tiles.length; i += CONCURRENCY) {
         const batch = tiles.slice(i, i + CONCURRENCY);
         const imgs  = await Promise.all(
-          batch.map(t => fetchTile(t.lng, t.lat, captureZ, styleId, token))
+          batch.map(t => fetchTile(t.lng, t.lat, z, styleId, token))
         );
         imgs.forEach((img, j) => {
           const t = batch[j];
-          // 오버랩 영역 크롭 → 중앙 ACTUAL_PX × ACTUAL_PX만 합성
+          // 오버랩 제거 → 중앙 1280×1280만 합성
           ctx.drawImage(
             img,
-            CROP_PX, CROP_PX, ACTUAL_PX, ACTUAL_PX,   // src: 오버랩 제거
-            t.col * ACTUAL_PX, t.row * ACTUAL_PX,       // dst 위치
-            ACTUAL_PX, ACTUAL_PX,                        // dst 크기
+            CROP_PX, CROP_PX, ACTUAL_PX, ACTUAL_PX,
+            t.col * ACTUAL_PX, t.row * ACTUAL_PX,
+            ACTUAL_PX, ACTUAL_PX,
           );
         });
         fetched += batch.length;
-        const pct = Math.round(fetched / total * 88) + 8;
-        setProgPct(pct);
+        setProgPct(Math.round(fetched / total * 88) + 8);
         setProgress(`타일 ${fetched} / ${total} 다운로드 중...`);
       }
 
-      // ── 최종 16:9 크롭 ────────────────────────────────────────────────
+      // ── bbox 정확한 크기로 크롭 ────────────────────────────────────
       setProgress('이미지 생성 중...');
       setProgPct(97);
-      const finalW = outW;
-      const finalH = outH;
-      const final  = document.createElement('canvas');
-      final.width  = finalW;
-      final.height = finalH;
-      // 그리드 중앙에서 정확히 16:9 크기만 잘라냄
-      const cropX = Math.round((gridW - finalW) / 2);
-      const cropY = Math.round((gridH - finalH) / 2);
-      final.getContext('2d')!.drawImage(canvas, cropX, cropY, finalW, finalH, 0, 0, finalW, finalH);
+      const final = document.createElement('canvas');
+      final.width  = exactW;
+      final.height = exactH;
+      final.getContext('2d')!.drawImage(canvas, 0, 0);
 
-      // ── 저장 ──────────────────────────────────────────────────────────
       setProgress('저장 중...');
       final.toBlob(blob => {
         if (!blob) return;
         const url = URL.createObjectURL(blob);
         const a = Object.assign(document.createElement('a'), {
           href: url,
-          download: `macro_hires_${finalW}x${finalH}_${Date.now()}.png`,
+          download: `macro_hires_z${z.toFixed(1)}_${exactW}x${exactH}_${Date.now()}.png`,
         });
         document.body.appendChild(a); a.click();
         document.body.removeChild(a);
@@ -240,23 +248,23 @@ export function HiResPanel() {
       setProgPct(0);
       setHiResCapturing(false);
     }
-  }, [mapInstance, delta, cols, mapStyle, outW, outH, hiResCapturing, setHiResCapturing]);
+  }, [mapInstance, delta, captureZoom, mapStyle, hiResCapturing, setHiResCapturing]);
 
   return (
     <SectionPanel sectionKey="hiResCap" title="Hi-Res Capture">
 
-      {/* 줌 정보 */}
+      {/* 현재 줌 */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <span style={labelStyle}>View zoom</span>
         <span style={{ ...monoStyle, color: 'var(--foreground)' }}>{zoom.toFixed(1)}</span>
       </div>
 
-      {/* 해상도 슬라이더 */}
+      {/* 디테일 슬라이더 */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={labelStyle}>Resolution</span>
+          <span style={labelStyle}>Detail</span>
           <span style={{ ...monoStyle, color: 'var(--accent)' }}>
-            {cols}×{Math.round(cols * 9 / 16)} tiles
+            {DELTA_LABEL[delta]}
           </span>
         </div>
         <div style={{ position: 'relative' }}>
@@ -267,7 +275,7 @@ export function HiResPanel() {
             style={{ width: '100%' }}
           />
           <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '2px', padding: '0 2px' }}>
-            {(['FHD', '4K', '8K'] as const).map((label, v) => (
+            {(['+0', '+1', '+2'] as const).map((label, v) => (
               <span key={v} style={{
                 ...monoStyle, fontSize: '10px',
                 opacity: delta === v ? 1 : 0.4,
@@ -278,20 +286,26 @@ export function HiResPanel() {
         </div>
       </div>
 
-      {/* 출력 해상도 */}
+      {/* 캡처 줌 표시 */}
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         padding: '6px 8px', background: 'var(--glass-border)', opacity: 0.9,
       }}>
-        <span style={{ ...labelStyle, fontSize: '11px' }}>Output</span>
-        <span style={{ ...monoStyle, fontSize: '11px', color: 'var(--foreground)' }}>
-          {RESOLUTION_LABEL[delta]}
+        <span style={{ ...labelStyle, fontSize: '11px' }}>Capture zoom</span>
+        <span style={{ ...monoStyle, fontSize: '11px', color: 'var(--accent)' }}>
+          z {captureZoom.toFixed(1)}
         </span>
       </div>
 
-      {/* 안내 */}
+      {/* 예상 타일 정보 */}
+      {estInfo && !hiResCapturing && (
+        <p style={{ ...labelStyle, fontSize: '11px', color: 'var(--muted-foreground)' }}>
+          {estInfo}
+        </p>
+      )}
+
       <p style={{ ...labelStyle, fontSize: '11px', color: 'var(--muted-foreground)' }}>
-        현재 뷰 중앙 기준 · 지도 이동 없음
+        현재 뷰 범위 · 지도 이동 없음
       </p>
 
       {/* 진행바 */}
@@ -303,8 +317,7 @@ export function HiResPanel() {
           }}>
             <div style={{
               height: '100%', width: `${progPct}%`,
-              background: 'var(--accent)',
-              borderRadius: '99px',
+              background: 'var(--accent)', borderRadius: '99px',
               transition: 'width 0.3s ease',
             }} />
           </div>
