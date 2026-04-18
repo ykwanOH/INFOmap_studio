@@ -389,7 +389,7 @@
     border: 1px solid var(--glass-border);
     border-radius: 0px;
     background: white;
-    color: var(--foreground);
+    color: #1a1a1a;
     outline: none;
     transition: border-color 0.12s;
     line-height: 1.3;

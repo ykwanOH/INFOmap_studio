@@ -24,15 +24,43 @@ const labelStyle = {
 
 interface SchemeConfig {
   labelKo: string;
-  land: string;
-  water: string;
-  border: string;
+  land: string;         // 대지·녹지 기본
+  water: string;        // 수계
+  border: string;       // 국경
+  pickSelected: string; // Pick&Push 선택 국가/주 표시색 (추후 활용)
+  altLand1?: string;    // 대지 보조1 (추후 활용)
+  altLand2?: string;    // 대지 보조2 (추후 활용)
 }
 
 const SCHEME_CONFIGS: Record<MapToastScheme, SchemeConfig> = {
-  twotone:  { labelKo: '투톤-그레이',  land: '#A0A0A0', water: 'rgba(64,64,64,0.80)',  border: '#BEBEBE' },
-  beigegray:{ labelKo: '베이지-그레이', land: '#CCC1B1', water: 'rgba(38,46,77,0.80)',  border: '#C8C8C8' },
-  bluegray: { labelKo: '블루-그레이',  land: '#898FB2', water: 'rgba(23,41,77,0.80)',  border: '#BEBEBE' },
+  // 투톤-그레이: 수계 #4d4c4c / 대지·녹지 #a0a0a0 / 대지선택 #ffffff
+  twotone: {
+    labelKo: '투톤-그레이',
+    land:         '#A0A0A0',
+    water:        '#4D4C4C',
+    border:       '#BEBEBE',
+    pickSelected: '#FFFFFF',
+  },
+  // 베이지-그레이: 수계 #99aaab / 대지·녹지 #dbd4cf / 대지선택 #c6a25f / 보조1 #989474 / 보조2 #9b8874
+  beigegray: {
+    labelKo: '베이지-그레이',
+    land:         '#DBD4CF',
+    water:        '#99AAAB',
+    border:       '#C8C8C8',
+    pickSelected: '#C6A25F',
+    altLand1:     '#989474',
+    altLand2:     '#9B8874',
+  },
+  // 블루-그레이: 수계 #282d4b / 대지·녹지 #a6abcd / 대지선택 #d1e6ff / 보조1 #7a8fb5 / 보조2 #6b7fa8
+  bluegray: {
+    labelKo: '블루-그레이',
+    land:         '#A6ABCD',
+    water:        '#282D4B',
+    border:       '#BEBEBE',
+    pickSelected: '#D1E6FF',
+    altLand1:     '#7A8FB5', // 블루그레이 계열 중간톤
+    altLand2:     '#6B7FA8', // 블루그레이 계열 진한톤
+  },
 };
 
 const SCHEME_ORDER: MapToastScheme[] = ['twotone', 'beigegray', 'bluegray'];

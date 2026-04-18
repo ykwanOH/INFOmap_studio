@@ -264,11 +264,11 @@ export default function MapView() {
 
     // 한국 sido GeoJSON
     const koSidoLayerId = 'macro-korea-sido';
-    if (map.getSource('korea-admin')) {
+    if (map.getSource('korea-sido')) {
       if (!map.getLayer(koSidoLayerId)) {
         try {
           map.addLayer({
-            id: koSidoLayerId, type: 'line', source: 'korea-admin',
+            id: koSidoLayerId, type: 'line', source: 'korea-sido',
             layout: { 'line-join': 'round', 'line-cap': 'round', visibility: 'none' },
             paint: {
               'line-color': stateCfg.color,
@@ -291,11 +291,11 @@ export default function MapView() {
 
     // ── 구/시 경계 (district) — 한국 sgg GeoJSON ─────────────────────────
     const koSggLayerId = 'macro-korea-sgg';
-    if (map.getSource('korea-admin')) {
+    if (map.getSource('korea-sgg')) {
       if (!map.getLayer(koSggLayerId)) {
         try {
           map.addLayer({
-            id: koSggLayerId, type: 'line', source: 'korea-admin',
+            id: koSggLayerId, type: 'line', source: 'korea-sgg',
             layout: { 'line-join': 'round', 'line-cap': 'round', visibility: 'none' },
             paint: {
               'line-color': districtCfg.color,
@@ -490,7 +490,7 @@ export default function MapView() {
 
         if (districtOn) {
           // district ON → 한국 sgg 레벨 우선 (읍면동 → sgg 코드로 그룹)
-          const koFeats = map.queryRenderedFeatures(e.point, { layers: ['korea-admin-fill'] });
+          const koFeats = map.queryRenderedFeatures(e.point, { layers: ['korea-sido-fill', 'korea-sgg-fill'] });
           if (koFeats.length > 0) {
             const feat = koFeats[0];
             const sgg = feat.properties?.sgg as string | undefined;
@@ -513,7 +513,7 @@ export default function MapView() {
 
         if (stateOn && !districtOn) {
           // state ON, district OFF → 한국 sido 레벨 또는 Mapbox admin_1
-          const koFeats = map.queryRenderedFeatures(e.point, { layers: ['korea-admin-fill'] });
+          const koFeats = map.queryRenderedFeatures(e.point, { layers: ['korea-sido-fill', 'korea-sgg-fill'] });
           if (koFeats.length > 0) {
             const feat = koFeats[0];
             const sido = feat.properties?.sido as string | undefined;
@@ -799,33 +799,32 @@ function initCustomLayers(map: mapboxgl.Map) {
   // Z5이하: 50%, Z5-7: 60%, Z7이후: 60% 유지, Z9 급증 억제
   // 위성 스타일일 때 도로 굵기 override는 style.load 콜백에서 applyRoadWidthOverride(map)로 처리
 
-  // ── 한국 행정구역 GeoJSON (lazy load) ──────────────────────────────────
-  // public/korea_admin.geojson — 읍면동 레벨 (3558개)
-  // sido(2자리): 17개 광역, sgg(5자리): 252개 시군구
-  if (!map.getSource('korea-admin')) {
-    fetch('/korea_admin.geojson')
+  // ── 한국 행정구역 GeoJSON (sido/sgg 분리 로드) ──────────────────────────
+  // korea_sido.geojson: 17개 광역 (읍면동→sido dissolve)
+  // korea_sgg.geojson:  252개 시군구 (읍면동→sgg dissolve)
+
+  // sido 소스
+  if (!map.getSource('korea-sido')) {
+    fetch('/korea_sido.geojson')
       .then((r) => r.json())
       .then((data) => {
-        if (map.getSource('korea-admin')) return; // 이미 추가됨
-        map.addSource('korea-admin', { type: 'geojson', data, generateId: true });
+        if (map.getSource('korea-sido')) return;
+        map.addSource('korea-sido', { type: 'geojson', data, generateId: true });
 
-        // fill 레이어 (pick 클릭용 — 투명, 클릭 히트박스 역할)
+        // pick 히트박스 (투명 fill)
         map.addLayer({
-          id: 'korea-admin-fill',
+          id: 'korea-sido-fill',
           type: 'fill',
-          source: 'korea-admin',
+          source: 'korea-sido',
           paint: { 'fill-color': 'transparent', 'fill-opacity': 0 },
         });
 
-        // 현재 border 상태 즉시 반영 (레이어는 borders effect가 처리)
         const store = useMapStore.getState();
         const stateCfg = store.borders.state;
-        const districtCfg = store.borders.district;
-
         map.addLayer({
           id: 'macro-korea-sido',
           type: 'line',
-          source: 'korea-admin',
+          source: 'korea-sido',
           layout: { 'line-join': 'round', 'line-cap': 'round', visibility: stateCfg.enabled ? 'visible' : 'none' },
           paint: {
             'line-color': stateCfg.color,
@@ -835,11 +834,32 @@ function initCustomLayers(map: mapboxgl.Map) {
             'line-opacity': 0.9,
           },
         });
+      })
+      .catch((e) => console.warn('Korea sido GeoJSON load failed', e));
+  }
 
+  // sgg 소스
+  if (!map.getSource('korea-sgg')) {
+    fetch('/korea_sgg.geojson')
+      .then((r) => r.json())
+      .then((data) => {
+        if (map.getSource('korea-sgg')) return;
+        map.addSource('korea-sgg', { type: 'geojson', data, generateId: true });
+
+        // pick 히트박스
+        map.addLayer({
+          id: 'korea-sgg-fill',
+          type: 'fill',
+          source: 'korea-sgg',
+          paint: { 'fill-color': 'transparent', 'fill-opacity': 0 },
+        });
+
+        const store = useMapStore.getState();
+        const districtCfg = store.borders.district;
         map.addLayer({
           id: 'macro-korea-sgg',
           type: 'line',
-          source: 'korea-admin',
+          source: 'korea-sgg',
           layout: { 'line-join': 'round', 'line-cap': 'round', visibility: districtCfg.enabled ? 'visible' : 'none' },
           paint: {
             'line-color': districtCfg.color,
@@ -850,7 +870,7 @@ function initCustomLayers(map: mapboxgl.Map) {
           },
         });
       })
-      .catch((e) => console.warn('Korea GeoJSON load failed', e));
+      .catch((e) => console.warn('Korea sgg GeoJSON load failed', e));
   }
 }
 

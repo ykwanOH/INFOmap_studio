@@ -227,7 +227,7 @@ export const useMapStore = create<MapStoreState>((set, get) => ({
   // ── Label / Road toggles ──
   showLabels: false,
   setShowLabels: (v) => set({ showLabels: v }),
-  showRoads: true,
+  showRoads: false,
   setShowRoads: (v) => set({ showRoads: v }),
 
   // ── Color ──

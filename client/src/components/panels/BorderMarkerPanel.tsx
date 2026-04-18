@@ -107,16 +107,6 @@ export function BorderMarkerPanel() {
         })}
       </div>
 
-      {/* Pick 모드 현재 단위 안내 */}
-      <div style={{ padding: '6px 8px', background: 'var(--glass-border)', opacity: 0.9 }}>
-        <p style={{ ...labelStyle, fontSize: '10px', color: 'var(--muted-foreground)', margin: 0 }}>
-          {borders.district.enabled
-            ? 'Pick → 구 / 시군 단위 선택'
-            : borders.state.enabled
-              ? 'Pick → 주 / 도 단위 선택'
-              : 'Pick → 국가 단위 선택'}
-        </p>
-      </div>
 
       {/* Divider */}
       <div style={{ height: 1, background: 'var(--glass-border)' }} />
