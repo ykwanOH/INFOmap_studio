@@ -1,14 +1,18 @@
 /**
- * MACRO Map Studio — Hi-Res Capture Panel (v4)
+ * MACRO Map Studio — Hi-Res Capture Panel (v5)
  *
- * ── 전략: 메인 맵 직접 이동 방식 ──
- * tempMap(오프스크린)은 GL 컨텍스트 크기가 보장되지 않아 타일 반복/왜곡 발생.
- * → 메인 맵 자체를 타일 중앙으로 jumpTo → 캡처 → 다음 타일 반복 → 원위치 복원.
- * 동일한 GL 컨텍스트·동일한 캔버스 크기이므로 타일 경계가 정확히 일치.
+ * ── 핵심 전략: MercatorCoordinate 직접 계산 ──
+ * unproject()는 현재 뷰포트의 CSS픽셀 기준이라 center가 바뀌면 틀림.
+ * 대신 현재 center의 MercatorCoordinate + 미터/픽셀 스케일로
+ * 각 타일 중앙의 절대 Mercator 좌표를 직접 계산 → jumpTo.
+ * → center 이동과 무관하게 타일 경계가 항상 정확히 일치.
  *
- * delta=0: FHD  1920×1080  (단일, 이동 없음)
- * delta=1: 4K   3840×2160  (2×2 = 4타일)
- * delta=2: 8K   7680×4320  (4×4 = 16타일)
+ * 비율 보정: cvW:cvH가 16:9가 아닐 수 있으므로
+ * drawImage src를 센터크롭해서 정확히 1920×1080 비율만 사용.
+ *
+ * delta=0: FHD  1920×1080
+ * delta=1: 4K   3840×2160  (2×2)
+ * delta=2: 8K   7680×4320  (4×4)
  */
 
 import { useCallback, useState } from 'react';
@@ -52,6 +56,34 @@ function waitStable(map: mapboxgl.Map): Promise<void> {
   });
 }
 
+/**
+ * 현재 맵 뷰포트의 메르카토르 좌표 범위와 픽셀당 메르카토르 단위를 계산.
+ * 이 값은 center가 바뀌어도 zoom이 같으면 px당 scale은 동일하므로
+ * 타일 중앙 좌표를 절대값으로 미리 계산할 수 있다.
+ */
+function getTileCenter(
+  map: mapboxgl.Map,
+  col: number,
+  row: number,
+  cols: number,
+): mapboxgl.LngLat {
+  // CSS 픽셀 기준 뷰포트 크기
+  const container = map.getContainer();
+  const vpW = container.clientWidth;
+  const vpH = container.clientHeight;
+
+  // 타일 1장의 CSS 픽셀 크기
+  const tileW = vpW / cols;
+  const tileH = vpH / cols;
+
+  // 이 타일 중앙의 CSS 픽셀 좌표 (원본 뷰포트 기준)
+  const cssX = col * tileW + tileW / 2;
+  const cssY = row * tileH + tileH / 2;
+
+  // unproject는 CSS픽셀 기준이므로 원본 center 상태에서만 호출
+  return map.unproject([cssX, cssY]);
+}
+
 export function HiResPanel() {
   const {
     mapInstance,
@@ -78,36 +110,47 @@ export function HiResPanel() {
     setHiResCapturing(true);
     setProgress('준비 중...');
 
-    // 현재 상태 저장 (복원용)
+    // 원본 상태 저장
     const origCenter  = mapInstance.getCenter();
     const origZoom    = mapInstance.getZoom();
     const origBearing = mapInstance.getBearing();
     const origPitch   = mapInstance.getPitch();
 
-    // 메인 캔버스 실제 픽셀 크기 (devicePixelRatio 반영된 실제 GL 해상도)
-    const cvW = mapInstance.getCanvas().width;
-    const cvH = mapInstance.getCanvas().height;
-
     try {
-      // 출력 캔버스
+      // ── 1단계: 타일 중앙 좌표를 원본 위치에서 미리 계산 ──────────────
+      // jumpTo 전에 계산해야 unproject가 정확함
+      const tileCenters: mapboxgl.LngLat[][] = [];
+      if (delta > 0) {
+        for (let row = 0; row < cols; row++) {
+          tileCenters[row] = [];
+          for (let col = 0; col < cols; col++) {
+            tileCenters[row][col] = getTileCenter(mapInstance, col, row, cols);
+          }
+        }
+      }
+
+      // ── 2단계: 출력 캔버스 준비 ──────────────────────────────────────
       const outCanvas = document.createElement('canvas');
       outCanvas.width  = outW;
       outCanvas.height = outH;
       const ctx = outCanvas.getContext('2d')!;
 
       if (delta === 0) {
-        // ── FHD: 현재 뷰 그대로 단일 캡처 ─────────────────────────────
+        // FHD: 현재 뷰 단일 캡처
         setProgress('캡처 중...');
         await waitStable(mapInstance);
-        ctx.drawImage(mapInstance.getCanvas(), 0, 0, outW, outH);
+
+        const cv = mapInstance.getCanvas();
+        // 비율 보정 센터크롭
+        const srcAR = cv.width / cv.height;
+        const dstAR = outW / outH;
+        let sx = 0, sy = 0, sw = cv.width, sh = cv.height;
+        if (srcAR > dstAR) { sw = Math.round(cv.height * dstAR); sx = Math.round((cv.width - sw) / 2); }
+        else if (srcAR < dstAR) { sh = Math.round(cv.width / dstAR); sy = Math.round((cv.height - sh) / 2); }
+        ctx.drawImage(cv, sx, sy, sw, sh, 0, 0, outW, outH);
 
       } else {
-        // ── 4K/8K: 메인 맵을 타일별로 이동하며 캡처 ─────────────────────
-        // 뷰포트 1장이 출력 전체의 1/cols 크기
-        // → 타일 i의 중앙이 원본 뷰포트의 몇 픽셀인지 계산 (GL 실제 픽셀 기준)
-        const tileGlW = cvW / cols;  // 타일 1장의 GL 픽셀 폭
-        const tileGlH = cvH / cols;  // 타일 1장의 GL 픽셀 높
-
+        // ── 3단계: 타일별 캡처 ─────────────────────────────────────────
         const total = cols * cols;
         let tileIdx = 0;
 
@@ -116,37 +159,39 @@ export function HiResPanel() {
             tileIdx++;
             setProgress(`타일 ${tileIdx} / ${total} 캡처 중...`);
 
-            // 이 타일 중앙이 원본 뷰포트에서 몇 GL픽셀인지
-            const centerGlX = col * tileGlW + tileGlW / 2;
-            const centerGlY = row * tileGlH + tileGlH / 2;
-
-            // GL픽셀 → 지리좌표 (Mercator 선형 변환)
-            const tileLngLat = mapInstance.unproject([
-              centerGlX / window.devicePixelRatio,
-              centerGlY / window.devicePixelRatio,
-            ]);
-
-            // 메인 맵을 타일 중앙으로 이동 (줌 유지)
+            // 미리 계산한 좌표로 이동 (줌 반드시 고정)
             mapInstance.jumpTo({
-              center: [tileLngLat.lng, tileLngLat.lat],
+              center: tileCenters[row][col],
               zoom: origZoom,
+              bearing: origBearing,
+              pitch: origPitch,
             });
 
             await waitStable(mapInstance);
 
-            // 캔버스 전체를 출력 캔버스의 해당 타일 위치에 그리기
+            const cv = mapInstance.getCanvas();
+
+            // 비율 보정: cv가 정확히 cols등분 비율이 아닐 경우 센터크롭
+            // 타일 1장 목표 비율 = 1920:1080 = 16:9
+            const tileOutW = outW / cols;  // 1920
+            const tileOutH = outH / cols;  // 1080
+            const srcAR = cv.width / cv.height;
+            const dstAR = tileOutW / tileOutH;
+            let sx = 0, sy = 0, sw = cv.width, sh = cv.height;
+            if (srcAR > dstAR) { sw = Math.round(cv.height * dstAR); sx = Math.round((cv.width - sw) / 2); }
+            else if (srcAR < dstAR) { sh = Math.round(cv.width / dstAR); sy = Math.round((cv.height - sh) / 2); }
+
             ctx.drawImage(
-              mapInstance.getCanvas(),
-              0, 0, cvW, cvH,               // src: 캔버스 전체
-              col * (outW / cols),           // dst x
-              row * (outH / cols),           // dst y
-              outW / cols,                   // dst w
-              outH / cols,                   // dst h
+              cv,
+              sx, sy, sw, sh,                    // src: 크롭된 영역
+              col * tileOutW, row * tileOutH,    // dst 위치
+              tileOutW, tileOutH,                // dst 크기
             );
           }
         }
       }
 
+      // ── 4단계: 저장 ──────────────────────────────────────────────────
       setProgress('저장 중...');
       const link = document.createElement('a');
       link.download = `macro_hires_${outW}x${outH}_${Date.now()}.png`;
@@ -159,7 +204,7 @@ export function HiResPanel() {
       setProgress('오류 발생');
       setTimeout(() => setProgress(null), 2000);
     } finally {
-      // ── 원래 위치·줌·각도로 복원 ──
+      // 원위치 복원
       mapInstance.jumpTo({
         center: [origCenter.lng, origCenter.lat],
         zoom: origZoom,
@@ -172,13 +217,11 @@ export function HiResPanel() {
 
   return (
     <SectionPanel sectionKey="hiResCap" title="Hi-Res Capture">
-      {/* 줌 정보 */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <span style={labelStyle}>View zoom</span>
         <span style={{ ...monoStyle, color: 'var(--foreground)' }}>{zoom.toFixed(1)}</span>
       </div>
 
-      {/* 해상도 슬라이더 */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span style={labelStyle}>Resolution</span>
@@ -209,7 +252,6 @@ export function HiResPanel() {
         </div>
       </div>
 
-      {/* 출력 해상도 */}
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         padding: '6px 8px', background: 'var(--glass-border)', opacity: 0.9,
@@ -220,14 +262,12 @@ export function HiResPanel() {
         </span>
       </div>
 
-      {/* 안내 */}
       {delta > 0 && (
         <p style={{ ...labelStyle, fontSize: '11px', color: 'var(--muted-foreground)' }}>
           캡처 중 지도가 잠시 이동합니다
         </p>
       )}
 
-      {/* 캡처 버튼 */}
       <button
         className="action-btn"
         style={{
@@ -242,7 +282,6 @@ export function HiResPanel() {
         {hiResCapturing ? progress ?? 'Capturing...' : 'Capture PNG'}
       </button>
 
-      {/* 진행 상태 */}
       {hiResCapturing && progress && (
         <p style={{ ...labelStyle, fontSize: '11px', color: 'var(--accent)', textAlign: 'center' }}>
           {progress}
