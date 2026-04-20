@@ -17,6 +17,17 @@ export type MapToastScheme = 'twotone' | 'beigegray' | 'bluegray';
 export type BorderLevel = 'country' | 'state' | 'district';
 export type RouteIconType = 'plane' | 'ship' | 'missile' | 'custom';
 export type ExtraLookType = 'monotone' | 'vintage' | 'digital' | null;
+export type RouteCapStyle = 'none' | 'circle' | 'arrow';
+export type RouteLineStyle = 'solid' | 'dashed';
+
+export interface RouteSegment {
+  id: string;
+  points: Array<[number, number]>;   // 앵커 포인트들 (Catmull-Rom 통과점)
+  color: string;
+  lineStyle: RouteLineStyle;
+  capStyle: RouteCapStyle;
+  selected: boolean;
+}
 
 export interface ColorConfig {
   landmass: string;    // 대지
@@ -117,13 +128,22 @@ export interface MapStoreState {
   resetAllPicks: () => void;
 
   // ── Route Line ──
+  routes: RouteSegment[];                          // 완료된 라인들
+  draftPoints: Array<[number, number]>;            // 현재 그리는 중인 점들
   isDrawingRoute: boolean;
   setIsDrawingRoute: (v: boolean) => void;
-  routeColor: string;
-  setRouteColor: (c: string) => void;
-  routePoints: Array<[number, number]>;
-  addRoutePoint: (pt: [number, number]) => void;
-  clearRoutePoints: () => void;
+  activeRouteColor: string;
+  setActiveRouteColor: (c: string) => void;
+  activeRouteLineStyle: RouteLineStyle;
+  setActiveRouteLineStyle: (s: RouteLineStyle) => void;
+  activeRouteCapStyle: RouteCapStyle;
+  setActiveRouteCapStyle: (s: RouteCapStyle) => void;
+  addDraftPoint: (pt: [number, number]) => void;
+  undoLastDraftPoint: () => void;                  // Backspace
+  commitRoute: () => void;                         // Enter — draft → route
+  selectRoute: (id: string | null) => void;
+  deleteSelectedRoute: () => void;
+  clearAllRoutes: () => void;
   terrainExaggeration: number;
   setTerrainExaggeration: (v: number) => void;
   hillshadeEnabled: boolean;
@@ -299,14 +319,40 @@ export const useMapStore = create<MapStoreState>((set, get) => ({
   resetAllPicks: () => set({ pickedFeatures: [], pickMode: false }),
 
   // ── Route Line ──
+  routes: [],
+  draftPoints: [],
   isDrawingRoute: false,
   setIsDrawingRoute: (v) => set({ isDrawingRoute: v }),
-  routeColor: '#e05c2a',
-  setRouteColor: (c) => set({ routeColor: c }),
-  routePoints: [],
-  addRoutePoint: (pt) =>
-    set((state) => ({ routePoints: [...state.routePoints, pt] })),
-  clearRoutePoints: () => set({ routePoints: [] }),
+  activeRouteColor: '#e05c2a',
+  setActiveRouteColor: (c) => set({ activeRouteColor: c }),
+  activeRouteLineStyle: 'solid',
+  setActiveRouteLineStyle: (s) => set({ activeRouteLineStyle: s }),
+  activeRouteCapStyle: 'none',
+  setActiveRouteCapStyle: (s) => set({ activeRouteCapStyle: s }),
+  addDraftPoint: (pt) =>
+    set((state) => ({ draftPoints: [...state.draftPoints, pt] })),
+  undoLastDraftPoint: () =>
+    set((state) => ({ draftPoints: state.draftPoints.slice(0, -1) })),
+  commitRoute: () =>
+    set((state) => {
+      if (state.draftPoints.length < 2) return { draftPoints: [] };
+      const newRoute: RouteSegment = {
+        id: `route-${Date.now()}`,
+        points: [...state.draftPoints],
+        color: state.activeRouteColor,
+        lineStyle: state.activeRouteLineStyle,
+        capStyle: state.activeRouteCapStyle,
+        selected: false,
+      };
+      return { routes: [...state.routes, newRoute], draftPoints: [], isDrawingRoute: false };
+    }),
+  selectRoute: (id) =>
+    set((state) => ({
+      routes: state.routes.map((r) => ({ ...r, selected: r.id === id })),
+    })),
+  deleteSelectedRoute: () =>
+    set((state) => ({ routes: state.routes.filter((r) => !r.selected) })),
+  clearAllRoutes: () => set({ routes: [], draftPoints: [] }),
   terrainExaggeration: 1.0,
   setTerrainExaggeration: (v) => set({ terrainExaggeration: v }),
   hillshadeEnabled: false,

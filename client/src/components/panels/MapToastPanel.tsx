@@ -184,6 +184,15 @@ export function MapToastPanel() {
   const [syncing, setSyncing] = useState(false);
   const [saved, setSaved] = useState(false);
 
+  // ── C안: 섹션 접으면 syncing 자동 해제 ──────────────────────────────────
+  const sections = useMapStore((s) => s.sections);
+  useEffect(() => {
+    if (!sections['mapToast'] && syncing) {
+      setSyncing(false);
+      setMapToastActive(false);
+    }
+  }, [sections, syncing, setMapToastActive]);
+
   // ── 미니맵 초기화 ──────────────────────────────────────────────────────────
   useEffect(() => {
     if (!miniContainerRef.current || miniMapRef.current) return;

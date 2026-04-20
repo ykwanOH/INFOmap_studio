@@ -1,11 +1,16 @@
 /**
- * MACRO Map Studio — Route Line Panel
- * Direct path drawing + terrain exaggeration controls
- * Matches sibling app design system
+ * MACRO Map Studio — Route Line Panel (v2)
+ *
+ * - Catmull-Rom 자동 곡선 (점만 찍으면 됨)
+ * - Backspace: 마지막 점 취소
+ * - Enter: 라인 확정 (이후 추가 라인 그리기 가능)
+ * - 지도에서 완료 라인 클릭 → 선택 → Delete로 삭제
+ * - 시점/종점 캡 스타일: none / circle / arrow
+ * - 라인 스타일: solid / dashed
  */
 
-import { useMapStore } from '@/store/useMapStore';
-import { SectionPanel, Toggle, SliderControl, ColorPicker } from '@/components/ui/SectionPanel';
+import { useMapStore, type RouteCapStyle, type RouteLineStyle } from '@/store/useMapStore';
+import { SectionPanel, ColorPicker } from '@/components/ui/SectionPanel';
 import { Pen, Trash2 } from 'lucide-react';
 
 const labelStyle = {
@@ -17,108 +22,142 @@ const labelStyle = {
   whiteSpace: 'nowrap' as const,
 };
 
-const ELEVATION_PRESETS = [
-  { key: 'natural' as const, label: 'Natural', colors: ['#4a8a4a', '#a8c870', '#e8d890', '#d0a870', '#b08060'] },
-  { key: 'vivid'   as const, label: 'Vivid',   colors: ['#2060c0', '#40a060', '#e0c040', '#e06020', '#c02020'] },
-  { key: 'arctic'  as const, label: 'Arctic',  colors: ['#c0d8f0', '#a0c0e0', '#e0e8f0', '#f0f4f8', '#ffffff'] },
+const CAP_OPTIONS: { key: RouteCapStyle; label: string; icon: string }[] = [
+  { key: 'none',   label: 'None',   icon: '—' },
+  { key: 'circle', label: 'Circle', icon: '●' },
+  { key: 'arrow',  label: 'Arrow',  icon: '➤' },
 ];
 
 export function RouteLinePanel() {
   const {
     isDrawingRoute, setIsDrawingRoute,
-    routeColor, setRouteColor,
-    routePoints, clearRoutePoints,
-    terrainExaggeration, setTerrainExaggeration,
-    hillshadeEnabled, setHillshadeEnabled,
-    elevationPreset, setElevationPreset,
+    activeRouteColor, setActiveRouteColor,
+    activeRouteLineStyle, setActiveRouteLineStyle,
+    activeRouteCapStyle, setActiveRouteCapStyle,
+    draftPoints,
+    routes,
+    deleteSelectedRoute,
+    clearAllRoutes,
   } = useMapStore();
+
+  const selectedRoute = routes.find((r) => r.selected) ?? null;
+
+  const handleDraw = () => {
+    if (isDrawingRoute) {
+      useMapStore.setState({ isDrawingRoute: false, draftPoints: [] });
+    } else {
+      setIsDrawingRoute(true);
+    }
+  };
 
   return (
     <SectionPanel sectionKey="routeLine" title="Route Line">
-      {/* Drawing controls */}
+
+      {/* Draw controls */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
         <button
           className={`action-btn ${isDrawingRoute ? 'active' : ''}`}
           style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
-          onClick={() => setIsDrawingRoute(!isDrawingRoute)}
+          onClick={handleDraw}
         >
           <Pen size={11} />
-          {isDrawingRoute ? 'Drawing...' : 'Draw Route'}
+          {isDrawingRoute ? `Drawing… (${draftPoints.length} pts)` : 'Draw Route'}
         </button>
-        <ColorPicker
-          color={routeColor}
-          onChange={setRouteColor}
-        />
-        <button
-          className="action-btn danger"
-          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '5px 8px' }}
-          onClick={clearRoutePoints}
-          disabled={routePoints.length === 0}
-          title="Clear route"
-        >
-          <Trash2 size={11} />
-        </button>
+        <ColorPicker color={activeRouteColor} onChange={setActiveRouteColor} />
       </div>
 
       {isDrawingRoute && (
-        <p style={{ ...labelStyle, fontSize: '11px', color: 'var(--accent)' }}>
-          Click on map to add points · {routePoints.length} pts
+        <p style={{ ...labelStyle, fontSize: '11px', color: 'var(--accent)', lineHeight: 1.5 }}>
+          Click to add points · <b>Enter</b> confirm · <b>Backspace</b> undo
         </p>
       )}
 
-      {/* Divider */}
-      <div style={{ height: 1, background: 'var(--glass-border)' }} />
-
-      {/* Terrain label */}
-      <span style={{ ...labelStyle, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase' as const, fontSize: '11px' }}>
-        Terrain
-      </span>
-
-      <SliderControl
-        label="Exaggeration"
-        value={terrainExaggeration}
-        min={1}
-        max={5}
-        step={0.1}
-        onChange={setTerrainExaggeration}
-        displayValue={`${terrainExaggeration.toFixed(1)}×`}
-      />
-
-      <Toggle
-        checked={hillshadeEnabled}
-        onChange={setHillshadeEnabled}
-        label="Hillshade"
-      />
-
-      {/* Elevation color presets */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-        <span style={{ ...labelStyle, fontSize: '11px' }}>Elevation Colors</span>
-        <div style={{ display: 'flex', gap: '6px' }}>
-          {ELEVATION_PRESETS.map((preset) => (
+      {/* Line style */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <span style={labelStyle}>Line Style</span>
+        <div style={{ display: 'flex', gap: '4px' }}>
+          {(['solid', 'dashed'] as RouteLineStyle[]).map((s) => (
             <button
-              key={preset.key}
-              onClick={() => setElevationPreset(preset.key)}
-              title={preset.label}
+              key={s}
+              onClick={() => setActiveRouteLineStyle(s)}
               style={{
-                flex: 1,
-                height: 18,
-                border: `2px solid ${elevationPreset === preset.key ? 'var(--primary)' : 'var(--glass-border)'}`,
-                background: `linear-gradient(to right, ${preset.colors.join(', ')})`,
+                padding: '3px 8px',
+                fontFamily: "'DM Mono', monospace",
+                fontSize: '10px',
+                border: `1.5px solid ${activeRouteLineStyle === s ? 'var(--accent)' : 'var(--glass-border)'}`,
+                background: activeRouteLineStyle === s ? 'var(--accent)' : 'transparent',
+                color: activeRouteLineStyle === s ? 'white' : 'var(--section-label-color)',
                 cursor: 'pointer',
-                transition: 'border-color 0.12s',
-                borderRadius: 0,
               }}
-            />
-          ))}
-        </div>
-        <div style={{ display: 'flex', gap: '6px' }}>
-          {ELEVATION_PRESETS.map((p) => (
-            <span key={p.key} style={{ ...labelStyle, flex: 1, textAlign: 'center' as const, fontSize: '10px' }}>
-              {p.label}
-            </span>
+            >
+              {s === 'solid' ? '———' : '- - -'}
+            </button>
           ))}
         </div>
       </div>
+
+      {/* Cap style */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <span style={labelStyle}>Endpoints</span>
+        <div style={{ display: 'flex', gap: '4px' }}>
+          {CAP_OPTIONS.map(({ key, label, icon }) => (
+            <button
+              key={key}
+              title={label}
+              onClick={() => setActiveRouteCapStyle(key)}
+              style={{
+                width: 28, height: 24,
+                fontFamily: "'DM Mono', monospace",
+                fontSize: '11px',
+                border: `1.5px solid ${activeRouteCapStyle === key ? 'var(--accent)' : 'var(--glass-border)'}`,
+                background: activeRouteCapStyle === key ? 'var(--accent)' : 'transparent',
+                color: activeRouteCapStyle === key ? 'white' : 'var(--section-label-color)',
+                cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              {icon}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Routes list */}
+      {routes.length > 0 && (
+        <>
+          <div style={{ height: 1, background: 'var(--glass-border)' }} />
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ ...labelStyle, fontSize: '11px', color: 'var(--muted-foreground)' }}>
+              {routes.length} route{routes.length > 1 ? 's' : ''} · click map to select
+            </span>
+            <button
+              className="action-btn danger"
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '3px 6px', gap: '3px' }}
+              onClick={clearAllRoutes}
+            >
+              <Trash2 size={10} /> All
+            </button>
+          </div>
+
+          {selectedRoute && (
+            <div style={{
+              padding: '6px 8px',
+              background: 'var(--glass-border)',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            }}>
+              <span style={{ ...labelStyle, fontSize: '11px' }}>Selected</span>
+              <button
+                className="action-btn danger"
+                style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 8px' }}
+                onClick={deleteSelectedRoute}
+              >
+                <Trash2 size={10} /> Delete
+              </button>
+            </div>
+          )}
+        </>
+      )}
+
     </SectionPanel>
   );
 }

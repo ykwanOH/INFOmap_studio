@@ -102,7 +102,9 @@ export default function MapView() {
     borders, colors,
     showLabels, showRoads,
     terrainExaggeration, hillshadeEnabled,
-    isDrawingRoute, routeColor, addRoutePoint, routePoints,
+    isDrawingRoute, activeRouteColor,
+    draftPoints, addDraftPoint, undoLastDraftPoint, commitRoute,
+    routes, selectRoute,
     flyFromPickMode, flyToPickMode, setFlyRouteFrom, setFlyRouteTo, setFlyFromPickMode, setFlyToPickMode,
     flyRoute,
     pickMode, addPickedFeature, pickedFeatures,
@@ -356,19 +358,108 @@ export default function MapView() {
     } catch (e) {}
   }, [hillshadeEnabled]);
 
-  // ── Route drawing ───────────────────────────────────────────────────────
+  // ── Catmull-Rom spline helper ───────────────────────────────────────────
+  // pts: 앵커 포인트 배열, samples: 각 세그먼트 분할 수
+  function catmullRomToGeojson(pts: Array<[number, number]>, samples = 32): Array<[number, number]> {
+    if (pts.length < 2) return pts;
+    const result: Array<[number, number]> = [];
+    // 양 끝에 phantom point 추가 (첫점/끝점 반사)
+    const p = [
+      [2 * pts[0][0] - pts[1][0], 2 * pts[0][1] - pts[1][1]] as [number, number],
+      ...pts,
+      [2 * pts[pts.length - 1][0] - pts[pts.length - 2][0],
+       2 * pts[pts.length - 1][1] - pts[pts.length - 2][1]] as [number, number],
+    ];
+    for (let i = 1; i < p.length - 2; i++) {
+      for (let t = 0; t <= samples; t++) {
+        const tt = t / samples;
+        const tt2 = tt * tt;
+        const tt3 = tt2 * tt;
+        const x = 0.5 * (
+          2 * p[i][0]
+          + (-p[i-1][0] + p[i+1][0]) * tt
+          + (2*p[i-1][0] - 5*p[i][0] + 4*p[i+1][0] - p[i+2][0]) * tt2
+          + (-p[i-1][0] + 3*p[i][0] - 3*p[i+1][0] + p[i+2][0]) * tt3
+        );
+        const y = 0.5 * (
+          2 * p[i][1]
+          + (-p[i-1][1] + p[i+1][1]) * tt
+          + (2*p[i-1][1] - 5*p[i][1] + 4*p[i+1][1] - p[i+2][1]) * tt2
+          + (-p[i-1][1] + 3*p[i][1] - 3*p[i+1][1] + p[i+2][1]) * tt3
+        );
+        if (t === 0 && result.length > 0) continue; // 중복 점 방지
+        result.push([x, y]);
+      }
+    }
+    return result;
+  }
+
+  // ── Route drawing (draft + committed routes) ────────────────────────────
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !styleLoadedRef.current) return;
-    const source = map.getSource('route-draw') as mapboxgl.GeoJSONSource | undefined;
-    if (source) {
-      source.setData({ type: 'Feature', geometry: { type: 'LineString', coordinates: routePoints }, properties: {} });
+
+    // 1) Draft (그리는 중인 라인)
+    const draftSource = map.getSource('route-draw') as mapboxgl.GeoJSONSource | undefined;
+    if (draftSource) {
+      const coords = draftPoints.length >= 2
+        ? catmullRomToGeojson(draftPoints)
+        : draftPoints;
+      draftSource.setData({
+        type: 'Feature',
+        geometry: { type: 'LineString', coordinates: coords },
+        properties: {},
+      });
     }
     if (map.getLayer('route-draw-line')) {
-      map.setPaintProperty('route-draw-line', 'line-color', routeColor);
+      map.setPaintProperty('route-draw-line', 'line-color', activeRouteColor);
       map.setPaintProperty('route-draw-line', 'line-width', 2.5);
+      map.setPaintProperty('route-draw-line', 'line-dasharray',
+        useMapStore.getState().activeRouteLineStyle === 'dashed' ? [4, 3] : [1]);
     }
-  }, [routePoints, routeColor]);
+
+    // 2) Committed routes — GeoJSON FeatureCollection으로 한 번에 관리
+    const committedSource = map.getSource('routes-committed') as mapboxgl.GeoJSONSource | undefined;
+    if (committedSource) {
+      const features: GeoJSON.Feature[] = [];
+      for (const route of routes) {
+        const coords = route.points.length >= 2
+          ? catmullRomToGeojson(route.points)
+          : route.points;
+        // 메인 라인
+        features.push({
+          type: 'Feature',
+          id: route.id,
+          geometry: { type: 'LineString', coordinates: coords },
+          properties: {
+            id: route.id,
+            color: route.color,
+            lineStyle: route.lineStyle,
+            selected: route.selected,
+            capStyle: route.capStyle,
+          },
+        });
+        // 시점/종점 캡
+        if (route.capStyle !== 'none' && route.points.length >= 2) {
+          const first = route.points[0];
+          const last = route.points[route.points.length - 1];
+          features.push({
+            type: 'Feature',
+            id: `${route.id}-cap-start`,
+            geometry: { type: 'Point', coordinates: first },
+            properties: { id: route.id, color: route.color, capStyle: route.capStyle, capRole: 'start' },
+          });
+          features.push({
+            type: 'Feature',
+            id: `${route.id}-cap-end`,
+            geometry: { type: 'Point', coordinates: last },
+            properties: { id: route.id, color: route.color, capStyle: route.capStyle, capRole: 'end' },
+          });
+        }
+      }
+      committedSource.setData({ type: 'FeatureCollection', features });
+    }
+  }, [draftPoints, activeRouteColor, routes]);
 
   // ── Fly route visualization ─────────────────────────────────────────────
   useEffect(() => {
@@ -468,7 +559,7 @@ export default function MapView() {
       const map = mapRef.current;
       if (!map) return;
       const { lng, lat } = e.lngLat;
-      if (isDrawingRoute) { addRoutePoint([lng, lat]); return; }
+      if (isDrawingRoute) { addDraftPoint([lng, lat]); return; }
       if (flyFromPickMode) {
         setFlyRouteFrom({ lng, lat, name: `${lat.toFixed(3)}°N, ${lng.toFixed(3)}°E` });
         setFlyFromPickMode(false);
@@ -558,7 +649,7 @@ export default function MapView() {
         return;
       }
     },
-    [isDrawingRoute, flyFromPickMode, flyToPickMode, pickMode, addRoutePoint,
+    [isDrawingRoute, flyFromPickMode, flyToPickMode, pickMode, addDraftPoint,
      setFlyRouteFrom, setFlyRouteTo, setFlyFromPickMode, setFlyToPickMode, addPickedFeature]
   );
 
@@ -576,6 +667,51 @@ export default function MapView() {
     const canvas = map.getCanvas();
     canvas.style.cursor = (isDrawingRoute || flyFromPickMode || flyToPickMode || pickMode) ? 'crosshair' : '';
   }, [isDrawingRoute, flyFromPickMode, flyToPickMode, pickMode]);
+
+  // ── Keyboard: Enter = commit route, Backspace = undo last point ──────────
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      // 입력창 포커스 중이면 무시
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+
+      const state = useMapStore.getState();
+      if (e.key === 'Enter' && state.isDrawingRoute) {
+        e.preventDefault();
+        state.commitRoute();
+      }
+      if (e.key === 'Backspace' && state.isDrawingRoute) {
+        e.preventDefault();
+        state.undoLastDraftPoint();
+      }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && !state.isDrawingRoute) {
+        // 그리기 모드 아닐 때 선택된 라인 삭제
+        const hasSelected = state.routes.some((r) => r.selected);
+        if (hasSelected) { e.preventDefault(); state.deleteSelectedRoute(); }
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []); // 한 번만 등록, 내부에서 getState()로 최신값 읽음
+
+  // ── Committed route click → select ──────────────────────────────────────
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const onClick = (e: mapboxgl.MapMouseEvent) => {
+      const state = useMapStore.getState();
+      if (state.isDrawingRoute || state.pickMode) return;
+      const features = map.queryRenderedFeatures(e.point, { layers: ['routes-committed-line'] });
+      if (features.length > 0) {
+        const id = features[0].properties?.id as string;
+        selectRoute(id);
+      } else {
+        selectRoute(null);
+      }
+    };
+    map.on('click', onClick);
+    return () => { map.off('click', onClick); };
+  }, [selectRoute]);
 
   return (
     <div
@@ -762,6 +898,71 @@ function initCustomLayers(map: mapboxgl.Map) {
     map.addLayer({ id: 'route-draw-line', type: 'line', source: 'route-draw',
       layout: { 'line-join': 'round', 'line-cap': 'round' },
       paint: { 'line-color': '#e05c2a', 'line-width': 2.5, 'line-opacity': 0.9 },
+    });
+  }
+  if (!map.getSource('routes-committed')) {
+    map.addSource('routes-committed', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    // 메인 라인 레이어
+    map.addLayer({
+      id: 'routes-committed-line',
+      type: 'line',
+      source: 'routes-committed',
+      filter: ['==', ['geometry-type'], 'LineString'],
+      layout: { 'line-join': 'round', 'line-cap': 'round' },
+      paint: {
+        'line-color': ['get', 'color'],
+        'line-width': ['case', ['get', 'selected'], 4, 2.5],
+        'line-opacity': 0.95,
+        'line-dasharray': ['case',
+          ['==', ['get', 'lineStyle'], 'dashed'], ['literal', [4, 3]],
+          ['literal', [1]],
+        ],
+      },
+    });
+    // 선택 하이라이트 (선택 시 흰 외곽선)
+    map.addLayer({
+      id: 'routes-committed-select',
+      type: 'line',
+      source: 'routes-committed',
+      filter: ['all', ['==', ['geometry-type'], 'LineString'], ['==', ['get', 'selected'], true]],
+      layout: { 'line-join': 'round', 'line-cap': 'round' },
+      paint: {
+        'line-color': '#ffffff',
+        'line-width': 7,
+        'line-opacity': 0.35,
+        'line-blur': 2,
+      },
+    }, 'routes-committed-line'); // 메인 라인 아래에 렌더
+    // 캡 포인트 레이어 (circle/arrow 공통 — arrow는 심볼로 별도)
+    map.addLayer({
+      id: 'routes-committed-caps',
+      type: 'circle',
+      source: 'routes-committed',
+      filter: ['all', ['==', ['geometry-type'], 'Point'], ['==', ['get', 'capStyle'], 'circle']],
+      paint: {
+        'circle-radius': 5,
+        'circle-color': ['get', 'color'],
+        'circle-stroke-width': 2,
+        'circle-stroke-color': '#ffffff',
+      },
+    });
+    // 화살표 심볼 레이어
+    map.addLayer({
+      id: 'routes-committed-arrows',
+      type: 'symbol',
+      source: 'routes-committed',
+      filter: ['all', ['==', ['geometry-type'], 'Point'], ['==', ['get', 'capStyle'], 'arrow']],
+      layout: {
+        'text-field': '▶',
+        'text-size': 14,
+        'text-allow-overlap': true,
+        'text-ignore-placement': true,
+      },
+      paint: {
+        'text-color': ['get', 'color'],
+        'text-halo-color': '#ffffff',
+        'text-halo-width': 1.5,
+      },
     });
   }
   if (!map.getSource('fly-route')) {
