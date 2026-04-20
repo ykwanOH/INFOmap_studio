@@ -814,13 +814,22 @@ export default function MapView() {
         if (!stateOn || target === null) {
           // country 기준 — countries.geojson에서 point-in-polygon으로 국가 탐색
           const countries = countriesRef.current;
+          console.log('[Pick] click', { lng, lat, countriesLoaded: !!countries, featureCount: countries?.features?.length });
           if (countries) {
             const pt = point([lng, lat]);
-            const found = countries.features.find((f) => {
-              if (!f.geometry) return false;
-              try { return booleanPointInPolygon(pt, f as any); }
-              catch { return false; }
-            });
+            let found: GeoJSON.Feature | undefined;
+            for (const f of countries.features) {
+              if (!f.geometry) continue;
+              try {
+                if (booleanPointInPolygon(pt, f as any)) {
+                  found = f;
+                  break;
+                }
+              } catch(e) {
+                console.warn('[Pick] pip error', e);
+              }
+            }
+            console.log('[Pick] found:', found?.properties);
             if (found && found.geometry) {
               const props = found.properties || {};
               const countryId = `country-${props.iso_n3 || props.name || pickId}`;
