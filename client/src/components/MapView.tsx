@@ -394,33 +394,65 @@ export default function MapView() {
     return result;
   }
 
-  // ── 지리 거리 기반 균등 샘플러 ────────────────────────────────────────────
-  // coords: Catmull-Rom 출력 좌표 배열
-  // intervalDeg: 경도 기준 간격 (도 단위, 위도 보정 포함)
-  function sampleEvenlyByDistance(
+  // ── Haversine 거리 (km) ─────────────────────────────────────────────────
+  function haversineKm(a: [number, number], b: [number, number]): number {
+    const R = 6371;
+    const dLat = (b[1] - a[1]) * Math.PI / 180;
+    const dLng = (b[0] - a[0]) * Math.PI / 180;
+    const h = Math.sin(dLat/2)**2
+            + Math.cos(a[1]*Math.PI/180) * Math.cos(b[1]*Math.PI/180) * Math.sin(dLng/2)**2;
+    return R * 2 * Math.asin(Math.sqrt(h));
+  }
+
+  // ── 총 곡선 길이 계산 (km) ───────────────────────────────────────────────
+  function totalLengthKm(coords: Array<[number, number]>): number {
+    let total = 0;
+    for (let i = 1; i < coords.length; i++) total += haversineKm(coords[i-1], coords[i]);
+    return total;
+  }
+
+  // ── 총 길이 기반 균등 도트 샘플링 ──────────────────────────────────────────
+  // 전체 길이를 먼저 구하고 → N개 도트 위치를 균등하게 배치
+  // dotCount: 원하는 도트 수 (width/라인 길이 기반으로 caller에서 결정)
+  function sampleEvenlyByCount(
     coords: Array<[number, number]>,
-    intervalDeg: number
+    dotCount: number
   ): Array<[number, number]> {
-    if (coords.length < 2) return coords;
+    if (coords.length < 2 || dotCount < 1) return coords.slice(0, 1);
+    const total = totalLengthKm(coords);
+    const interval = total / dotCount;
     const result: Array<[number, number]> = [coords[0]];
     let accumulated = 0;
+    let nextTarget = interval;
     for (let i = 1; i < coords.length; i++) {
-      const dx = (coords[i][0] - coords[i-1][0]) * Math.cos(coords[i-1][1] * Math.PI / 180);
-      const dy = coords[i][1] - coords[i-1][1];
-      accumulated += Math.sqrt(dx*dx + dy*dy);
-      if (accumulated >= intervalDeg) {
-        result.push(coords[i]);
-        accumulated = 0;
+      const segLen = haversineKm(coords[i-1], coords[i]);
+      if (segLen === 0) continue;
+      let remaining = segLen;
+      let segProgress = 0;
+      while (accumulated + remaining >= nextTarget) {
+        const t = (nextTarget - accumulated) / segLen;
+        segProgress = t;
+        const pt: [number, number] = [
+          coords[i-1][0] + t * (coords[i][0] - coords[i-1][0]),
+          coords[i-1][1] + t * (coords[i][1] - coords[i-1][1]),
+        ];
+        result.push(pt);
+        nextTarget += interval;
+        remaining = segLen * (1 - segProgress);
+        accumulated = segLen * segProgress;
       }
+      accumulated += remaining;
     }
     return result;
   }
 
-  // ── 선분 끝 방향각 계산 (도, Mapbox bearing: 북=0, 시계방향) ──────────────
+  // ── 선분 끝 방향각 (Mapbox bearing: 북=0, 시계방향) ────────────────────────
+  // ▶ 문자는 동(오른쪽)이 0°이므로 bearing에서 -90° 보정
   function calcBearing(from: [number, number], to: [number, number]): number {
     const dLng = (to[0] - from[0]) * Math.cos(from[1] * Math.PI / 180);
     const dLat = to[1] - from[1];
-    return (Math.atan2(dLng, dLat) * 180 / Math.PI + 360) % 360;
+    const bearing = (Math.atan2(dLng, dLat) * 180 / Math.PI + 360) % 360;
+    return (bearing - 90 + 360) % 360;  // ▶ 문자 방향 보정
   }
 
   // ── Route drawing (draft + committed routes) ────────────────────────────
@@ -455,28 +487,29 @@ export default function MapView() {
       }
     }
 
-    // 2) Draft dots source (점선 도트 레이어)
+    // 2) Draft dots source — Haversine 균등 샘플링
     const draftDotsSource = map.getSource('route-draw-dots') as mapboxgl.GeoJSONSource | undefined;
     if (draftDotsSource) {
       const previewPts: Array<[number, number]> = draftDragPoint && draftPoints.length >= 1
         ? [...draftPoints, draftDragPoint]
         : draftPoints;
-      const coords = previewPts.length >= 2 ? catmullRomToGeojson(previewPts, 96) : previewPts;
-      // 일정 간격으로 도트 포인트 샘플링 (전체 점의 1/5 간격)
-      const dotFeatures: GeoJSON.Feature[] = [];
-      // 도트 radius = activeRouteWidth/2, 간격 = radius * 3.5 (붙지 않도록)
-      // coords는 ~48 samples/세그먼트 → 이웃 coord 간 거리는 거의 일정
-      // 간격 step: width 클수록 더 띄워야 함
+      const coords = previewPts.length >= 2 ? catmullRomToGeojson(previewPts, 256) : previewPts;
       const dotRadius = activeRouteWidth / 2;
-      const dotGap = Math.max(3, Math.round(dotRadius * 3.5)); // 최소 3 index 간격
-      for (let i = 0; i < coords.length; i += dotGap) {
-        dotFeatures.push({
+      let dotFeatures: GeoJSON.Feature[] = [];
+      if (isDashed && coords.length >= 2) {
+        // 총 길이 기준 도트 개수: 도트 지름 * 2.5 간격으로 몇 개 들어가는지
+        // 화면 픽셀 대신 km 기준: 1° ≈ 111km 참고, width px를 고정 km로 환산 불가
+        // → 총 길이(km) / (width * 0.12) 개수로 결정 (경험값, 줌 무관하게 시각적 균등)
+        const totalKm = totalLengthKm(coords);
+        const dotCount = Math.max(2, Math.round(totalKm / (activeRouteWidth * 0.12)));
+        const dotPts = sampleEvenlyByCount(coords, dotCount);
+        dotFeatures = dotPts.map((pt) => ({
           type: 'Feature',
-          geometry: { type: 'Point', coordinates: coords[i] },
+          geometry: { type: 'Point', coordinates: pt },
           properties: { color: activeRouteColor, radius: dotRadius },
-        });
+        }));
       }
-      draftDotsSource.setData({ type: 'FeatureCollection', features: isDashed ? dotFeatures : [] });
+      draftDotsSource.setData({ type: 'FeatureCollection', features: dotFeatures });
     }
 
     // 3) Draft start cap (시작점 항상 원형)
@@ -508,6 +541,8 @@ export default function MapView() {
             color: route.color,
             lineStyle: route.lineStyle,
             width: route.width,
+            // 점선은 투명(dot 레이어로 표현) — 히트영역은 width 유지
+            lineOpacity: route.lineStyle === 'dashed' ? 0 : 0.95,
             selected: route.selected,
             capStyle: route.capStyle,
           },
@@ -521,28 +556,33 @@ export default function MapView() {
             properties: { id: route.id, color: route.color, role: 'start', width: route.width },
           });
         }
-        // 종점 캡 (arrow or circle, capStyle에 따라)
+        // 종점 캡 — bearing 계산 포함
         if (route.capStyle !== 'none' && route.points.length >= 2) {
+          const n = coords.length;
+          // 끝 방향: 마지막 몇 점 평균으로 안정화 (단일 점 noise 방지)
+          const fromIdx = Math.max(0, n - Math.min(8, Math.floor(n * 0.05) + 2));
+          const bearing = calcBearing(coords[fromIdx], coords[n - 1]);
           features.push({
             type: 'Feature',
             id: `${route.id}-end`,
             geometry: { type: 'Point', coordinates: route.points[route.points.length - 1] },
-            properties: { id: route.id, color: route.color, capStyle: route.capStyle, role: 'end', width: route.width },
+            properties: { id: route.id, color: route.color, capStyle: route.capStyle, role: 'end', width: route.width, bearing },
           });
         }
-        // 도트 (점선)
+        // 도트 — Haversine 균등 샘플링
         if (route.lineStyle === 'dashed') {
-          const dotCoords = catmullRomToGeojson(route.points, 96);
-          const dotRadius = route.width / 2;
-          const dotGap = Math.max(3, Math.round(dotRadius * 3.5));
-          for (let i = 0; i < dotCoords.length; i += dotGap) {
+          const dotCoords = catmullRomToGeojson(route.points, 256);
+          const totalKm = totalLengthKm(dotCoords);
+          const dotCount = Math.max(2, Math.round(totalKm / (route.width * 0.12)));
+          const dotPts = sampleEvenlyByCount(dotCoords, dotCount);
+          dotPts.forEach((pt, idx) => {
             features.push({
               type: 'Feature',
-              id: `${route.id}-dot-${i}`,
-              geometry: { type: 'Point', coordinates: dotCoords[i] },
+              id: `${route.id}-dot-${idx}`,
+              geometry: { type: 'Point', coordinates: pt },
               properties: { id: route.id, color: route.color, role: 'dot', width: route.width },
             });
-          }
+          });
         }
       }
       committedSource.setData({ type: 'FeatureCollection', features });
@@ -1116,7 +1156,7 @@ function initCustomLayers(map: mapboxgl.Map) {
       filter: ['all', ['==', ['geometry-type'], 'Point'], ['==', ['get', 'role'], 'end'], ['==', ['get', 'capStyle'], 'arrow']],
       layout: {
         'text-field': '▶',
-        'text-size': ['*', ['/', ['get', 'width'], 5], 42],
+        'text-size': ['*', ['/', ['get', 'width'], 5], 126],
         'text-rotate': ['get', 'bearing'],
         'text-rotation-alignment': 'map',
         'text-allow-overlap': true,
