@@ -12,7 +12,6 @@ import { HiResPanel } from './panels/HiResPanel';
 import { BorderMarkerPanel } from './panels/BorderMarkerPanel';
 import { PickPushPanel } from './panels/PickPushPanel';
 import { RouteLinePanel } from './panels/RouteLinePanel';
-import { ExportPanel } from './panels/ExportPanel';
 import { FlyToAEPanel } from './panels/FlyToAEPanel';
 import { ExtraLookPanel } from './panels/ExtraLookPanel';
 import { useMapStore } from '@/store/useMapStore';
@@ -167,7 +166,6 @@ export function ControlPanel() {
 
           <PickPushPanel />
           <RouteLinePanel />
-          <ExportPanel />
 
           <PanelSectionDivider />
 
