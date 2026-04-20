@@ -411,37 +411,40 @@ export default function MapView() {
     return total;
   }
 
-  // ── 총 길이 기반 균등 도트 샘플링 ──────────────────────────────────────────
-  // 전체 길이를 먼저 구하고 → N개 도트 위치를 균등하게 배치
-  // dotCount: 원하는 도트 수 (width/라인 길이 기반으로 caller에서 결정)
+  // ── 균등 도트 샘플링 — cumulative distance 방식 (정확) ────────────────────
+  // 1. 각 coord의 누적 km 배열 생성
+  // 2. 총 길이를 dotCount로 나눈 interval 기준으로 target 거리 배열 생성
+  // 3. 각 target에 대해 이분탐색 후 선형보간 → 정확한 균등 간격
   function sampleEvenlyByCount(
     coords: Array<[number, number]>,
     dotCount: number
   ): Array<[number, number]> {
-    if (coords.length < 2 || dotCount < 1) return coords.slice(0, 1);
-    const total = totalLengthKm(coords);
-    const interval = total / dotCount;
-    const result: Array<[number, number]> = [coords[0]];
-    let accumulated = 0;
-    let nextTarget = interval;
+    if (coords.length < 2 || dotCount < 2) return [coords[0]];
+    // 1) 누적 거리 배열
+    const cumDist: number[] = [0];
     for (let i = 1; i < coords.length; i++) {
-      const segLen = haversineKm(coords[i-1], coords[i]);
-      if (segLen === 0) continue;
-      let remaining = segLen;
-      let segProgress = 0;
-      while (accumulated + remaining >= nextTarget) {
-        const t = (nextTarget - accumulated) / segLen;
-        segProgress = t;
-        const pt: [number, number] = [
-          coords[i-1][0] + t * (coords[i][0] - coords[i-1][0]),
-          coords[i-1][1] + t * (coords[i][1] - coords[i-1][1]),
-        ];
-        result.push(pt);
-        nextTarget += interval;
-        remaining = segLen * (1 - segProgress);
-        accumulated = segLen * segProgress;
+      cumDist.push(cumDist[i-1] + haversineKm(coords[i-1], coords[i]));
+    }
+    const total = cumDist[cumDist.length - 1];
+    if (total === 0) return [coords[0]];
+    // 2) target 거리 배열 (0 ~ total을 dotCount 균등 분할)
+    const result: Array<[number, number]> = [];
+    for (let k = 0; k <= dotCount; k++) {
+      const targetDist = (k / dotCount) * total;
+      // 이분탐색으로 targetDist가 속한 세그먼트 찾기
+      let lo = 0, hi = cumDist.length - 2;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (cumDist[mid + 1] < targetDist) lo = mid + 1;
+        else hi = mid;
       }
-      accumulated += remaining;
+      const i = lo;
+      const segLen = cumDist[i+1] - cumDist[i];
+      const t = segLen > 0 ? (targetDist - cumDist[i]) / segLen : 0;
+      result.push([
+        coords[i][0] + t * (coords[i+1][0] - coords[i][0]),
+        coords[i][1] + t * (coords[i+1][1] - coords[i][1]),
+      ]);
     }
     return result;
   }
@@ -829,7 +832,15 @@ export default function MapView() {
     const onClick = (e: mapboxgl.MapMouseEvent) => {
       const state = useMapStore.getState();
       if (state.isDrawingRoute || state.pickMode) return;
-      const features = map.queryRenderedFeatures(e.point, { layers: ['routes-committed-line'] });
+      // 실선: routes-committed-line, 점선: routes-committed-dots (dot 클릭)
+      // 히트 반경 확장 — 5px box로 쿼리
+      const bbox: [mapboxgl.PointLike, mapboxgl.PointLike] = [
+        [e.point.x - 8, e.point.y - 8],
+        [e.point.x + 8, e.point.y + 8],
+      ];
+      const features = map.queryRenderedFeatures(bbox, {
+        layers: ['routes-committed-line', 'routes-committed-dots', 'routes-committed-start', 'routes-committed-end-circle'],
+      });
       if (features.length > 0) {
         const id = features[0].properties?.id as string;
         selectRoute(id);
@@ -1156,7 +1167,7 @@ function initCustomLayers(map: mapboxgl.Map) {
       filter: ['all', ['==', ['geometry-type'], 'Point'], ['==', ['get', 'role'], 'end'], ['==', ['get', 'capStyle'], 'arrow']],
       layout: {
         'text-field': '▶',
-        'text-size': ['*', ['/', ['get', 'width'], 5], 126],
+        'text-size': ['*', ['/', ['get', 'width'], 5], 63],
         'text-rotate': ['get', 'bearing'],
         'text-rotation-alignment': 'map',
         'text-allow-overlap': true,
