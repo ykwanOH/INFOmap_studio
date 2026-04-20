@@ -37,6 +37,7 @@ export function PickPushPanel() {
     borders,
     pickMode, setPickMode,
     pickDisplayMode, setPickDisplayMode,
+    pickUnitMode, setPickUnitMode,
     pickedFeatures,
     updatePickedFeature,
     clearPickedFeatures,
