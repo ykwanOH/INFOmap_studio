@@ -1065,7 +1065,7 @@ function initCustomLayers(map: mapboxgl.Map) {
       paint: {
         'line-color': ['get', 'color'],
         'line-width': ['get', 'width'],
-        'line-opacity': 0.95,
+        'line-opacity': ['coalesce', ['get', 'lineOpacity'], 0.95],
       },
     });
     // 점선: 도트 포인트 레이어

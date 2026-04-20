@@ -1,14 +1,15 @@
 /**
- * MACRO Map Studio — Route Line Panel (v2)
+ * MACRO Map Studio — Route Line Panel (v3)
  *
- * - Catmull-Rom 자동 곡선 (점만 찍으면 됨)
- * - Backspace: 마지막 점 취소
- * - Enter: 라인 확정 (이후 추가 라인 그리기 가능)
- * - 지도에서 완료 라인 클릭 → 선택 → Delete로 삭제
- * - 시점/종점 캡 스타일: none / circle / arrow
- * - 라인 스타일: solid / dashed
+ * 컨트롤 단일화:
+ * - Color / Style / Endpoints / Width 항상 노출
+ * - 선택된 라인 있으면 → 해당 라인 실시간 편집
+ * - 선택 없으면 → 다음 라인 기본값
+ * - 개별 삭제: 지도에서 선택 후 Del / Backspace
+ * - 전체 삭제: Clear All 버튼만 유지
  */
 
+import { useEffect } from 'react';
 import { useMapStore, type RouteCapStyle, type RouteLineStyle } from '@/store/useMapStore';
 import { SectionPanel, ColorPicker, SliderControl } from '@/components/ui/SectionPanel';
 import { Pen, Trash2 } from 'lucide-react';
@@ -38,11 +39,36 @@ export function RouteLinePanel() {
     draftPoints,
     routes,
     updateRoute,
-    deleteSelectedRoute,
     clearAllRoutes,
   } = useMapStore();
 
   const selectedRoute = routes.find((r) => r.selected) ?? null;
+
+  // 컨트롤 값: 선택 라인 있으면 그 값, 없으면 active 기본값
+  const color = selectedRoute?.color     ?? activeRouteColor;
+  const style = selectedRoute?.lineStyle ?? activeRouteLineStyle;
+  const cap   = selectedRoute?.capStyle  ?? activeRouteCapStyle;
+  const width = selectedRoute?.width     ?? activeRouteWidth;
+
+  // 각 setter: 선택 라인 있으면 updateRoute, 없으면 active 값 변경
+  const setColor = (v: string) =>
+    selectedRoute ? updateRoute(selectedRoute.id, { color: v }) : setActiveRouteColor(v);
+  const setStyle = (v: RouteLineStyle) =>
+    selectedRoute ? updateRoute(selectedRoute.id, { lineStyle: v }) : setActiveRouteLineStyle(v);
+  const setCap = (v: RouteCapStyle) =>
+    selectedRoute ? updateRoute(selectedRoute.id, { capStyle: v }) : setActiveRouteCapStyle(v);
+  const setWidth = (v: number) =>
+    selectedRoute ? updateRoute(selectedRoute.id, { width: v }) : setActiveRouteWidth(v);
+
+  // 선택된 라인이 생기면 active* 값도 동기화 (다음 라인 기본값 연동)
+  useEffect(() => {
+    if (!selectedRoute) return;
+    setActiveRouteColor(selectedRoute.color);
+    setActiveRouteLineStyle(selectedRoute.lineStyle);
+    setActiveRouteCapStyle(selectedRoute.capStyle);
+    setActiveRouteWidth(selectedRoute.width);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedRoute?.id]);
 
   const handleDraw = () => {
     if (isDrawingRoute) {
@@ -55,7 +81,7 @@ export function RouteLinePanel() {
   return (
     <SectionPanel sectionKey="routeLine" title="Route Line">
 
-      {/* Draw controls */}
+      {/* Draw button + color */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
         <button
           className={`action-btn ${isDrawingRoute ? 'active' : ''}`}
@@ -65,158 +91,85 @@ export function RouteLinePanel() {
           <Pen size={11} />
           {isDrawingRoute ? `Drawing… (${draftPoints.length} pts)` : 'Draw Route'}
         </button>
-        <ColorPicker color={activeRouteColor} onChange={setActiveRouteColor} />
+        <ColorPicker color={color} onChange={setColor} />
       </div>
 
-      {isDrawingRoute && (
+      {/* 상태 힌트 */}
+      {isDrawingRoute ? (
         <p style={{ ...labelStyle, fontSize: '11px', color: 'var(--accent)', lineHeight: 1.5 }}>
-          Click to add points · <b>Enter</b> confirm · <b>Backspace</b> undo
+          Click to add · <b>Enter</b> confirm · <b>Backspace</b> undo
         </p>
-      )}
+      ) : selectedRoute ? (
+        <p style={{ ...labelStyle, fontSize: '11px', color: 'var(--accent)' }}>
+          Editing selected · <b>Del</b> to remove
+        </p>
+      ) : null}
 
       {/* Line style */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <span style={labelStyle}>Line Style</span>
         <div style={{ display: 'flex', gap: '4px' }}>
           {(['solid', 'dashed'] as RouteLineStyle[]).map((s) => (
-            <button
-              key={s}
-              onClick={() => setActiveRouteLineStyle(s)}
-              style={{
-                padding: '3px 8px',
-                fontFamily: "'DM Mono', monospace",
-                fontSize: '10px',
-                border: `1.5px solid ${activeRouteLineStyle === s ? 'var(--accent)' : 'var(--glass-border)'}`,
-                background: activeRouteLineStyle === s ? 'var(--accent)' : 'transparent',
-                color: activeRouteLineStyle === s ? 'white' : 'var(--section-label-color)',
-                cursor: 'pointer',
-              }}
-            >
+            <button key={s} onClick={() => setStyle(s)} style={{
+              padding: '3px 8px',
+              fontFamily: "'DM Mono', monospace", fontSize: '10px',
+              border: `1.5px solid ${style === s ? 'var(--accent)' : 'var(--glass-border)'}`,
+              background: style === s ? 'var(--accent)' : 'transparent',
+              color: style === s ? 'white' : 'var(--section-label-color)',
+              cursor: 'pointer',
+            }}>
               {s === 'solid' ? '———' : '- - -'}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Cap style */}
+      {/* Endpoints */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <span style={labelStyle}>Endpoints</span>
         <div style={{ display: 'flex', gap: '4px' }}>
           {CAP_OPTIONS.map(({ key, label, icon }) => (
-            <button
-              key={key}
-              title={label}
-              onClick={() => setActiveRouteCapStyle(key)}
-              style={{
-                width: 28, height: 24,
-                fontFamily: "'DM Mono', monospace",
-                fontSize: '11px',
-                border: `1.5px solid ${activeRouteCapStyle === key ? 'var(--accent)' : 'var(--glass-border)'}`,
-                background: activeRouteCapStyle === key ? 'var(--accent)' : 'transparent',
-                color: activeRouteCapStyle === key ? 'white' : 'var(--section-label-color)',
-                cursor: 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}
-            >
+            <button key={key} title={label} onClick={() => setCap(key)} style={{
+              width: 28, height: 24,
+              fontFamily: "'DM Mono', monospace", fontSize: '11px',
+              border: `1.5px solid ${cap === key ? 'var(--accent)' : 'var(--glass-border)'}`,
+              background: cap === key ? 'var(--accent)' : 'transparent',
+              color: cap === key ? 'white' : 'var(--section-label-color)',
+              cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
               {icon}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Width slider */}
+      {/* Width */}
       <SliderControl
         label="Width"
-        value={activeRouteWidth}
-        min={1}
-        max={10}
-        step={0.5}
-        onChange={setActiveRouteWidth}
-        displayValue={`${activeRouteWidth.toFixed(1)}px`}
+        value={width}
+        min={1} max={10} step={0.5}
+        onChange={setWidth}
+        displayValue={`${width.toFixed(1)}px`}
       />
 
-      {/* Routes list */}
+      {/* Routes count + Clear All */}
       {routes.length > 0 && (
         <>
           <div style={{ height: 1, background: 'var(--glass-border)' }} />
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span style={{ ...labelStyle, fontSize: '11px', color: 'var(--muted-foreground)' }}>
-              {routes.length} route{routes.length > 1 ? 's' : ''} · click map to select
+              {routes.length} route{routes.length > 1 ? 's' : ''}
+              {selectedRoute ? '  · selected' : '  · click to select'}
             </span>
             <button
               className="action-btn danger"
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '3px 6px', gap: '3px' }}
+              style={{ display: 'flex', alignItems: 'center', gap: '3px', padding: '3px 6px' }}
               onClick={clearAllRoutes}
             >
               <Trash2 size={10} /> All
             </button>
           </div>
-
-          {selectedRoute && (
-            <div style={{
-              padding: '8px',
-              background: 'var(--glass-border)',
-              display: 'flex', flexDirection: 'column', gap: '8px',
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ ...labelStyle, fontSize: '11px', fontWeight: 500 }}>Selected Route</span>
-                <button
-                  className="action-btn danger"
-                  style={{ display: 'flex', alignItems: 'center', gap: '3px', padding: '2px 6px' }}
-                  onClick={deleteSelectedRoute}
-                >
-                  <Trash2 size={10} /> Delete
-                </button>
-              </div>
-              {/* 선택 라인 굵기 */}
-              <SliderControl
-                label="Width"
-                value={selectedRoute.width}
-                min={1}
-                max={10}
-                step={0.5}
-                onChange={(v) => updateRoute(selectedRoute.id, { width: v })}
-                displayValue={`${selectedRoute.width.toFixed(1)}px`}
-              />
-              {/* 선택 라인 스타일 */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={labelStyle}>Style</span>
-                <div style={{ display: 'flex', gap: '4px' }}>
-                  {(['solid', 'dashed'] as const).map((s) => (
-                    <button key={s} onClick={() => updateRoute(selectedRoute.id, { lineStyle: s })}
-                      style={{
-                        padding: '2px 7px', fontFamily: "'DM Mono', monospace", fontSize: '10px',
-                        border: `1.5px solid ${selectedRoute.lineStyle === s ? 'var(--accent)' : 'var(--glass-border)'}`,
-                        background: selectedRoute.lineStyle === s ? 'var(--accent)' : 'transparent',
-                        color: selectedRoute.lineStyle === s ? 'white' : 'var(--section-label-color)',
-                        cursor: 'pointer',
-                      }}>
-                      {s === 'solid' ? '———' : '- - -'}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {/* 선택 라인 종점 */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={labelStyle}>End</span>
-                <div style={{ display: 'flex', gap: '4px' }}>
-                  {CAP_OPTIONS.map(({ key, label, icon }) => (
-                    <button key={key} title={label}
-                      onClick={() => updateRoute(selectedRoute.id, { capStyle: key })}
-                      style={{
-                        width: 26, height: 22, fontFamily: "'DM Mono', monospace", fontSize: '11px',
-                        border: `1.5px solid ${selectedRoute.capStyle === key ? 'var(--accent)' : 'var(--glass-border)'}`,
-                        background: selectedRoute.capStyle === key ? 'var(--accent)' : 'transparent',
-                        color: selectedRoute.capStyle === key ? 'white' : 'var(--section-label-color)',
-                        cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      }}>
-                      {icon}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
         </>
       )}
 
