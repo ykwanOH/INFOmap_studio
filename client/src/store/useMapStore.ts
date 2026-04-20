@@ -147,6 +147,7 @@ export interface MapStoreState {
   undoLastDraftPoint: () => void;                  // Backspace
   commitRoute: () => void;                         // Enter — draft → route
   selectRoute: (id: string | null) => void;
+  updateRoute: (id: string, updates: Partial<Pick<RouteSegment, 'color' | 'lineStyle' | 'capStyle' | 'width'>>) => void;
   deleteSelectedRoute: () => void;
   clearAllRoutes: () => void;
   terrainExaggeration: number;
@@ -359,6 +360,10 @@ export const useMapStore = create<MapStoreState>((set, get) => ({
   selectRoute: (id) =>
     set((state) => ({
       routes: state.routes.map((r) => ({ ...r, selected: r.id === id })),
+    })),
+  updateRoute: (id, updates) =>
+    set((state) => ({
+      routes: state.routes.map((r) => r.id === id ? { ...r, ...updates } : r),
     })),
   deleteSelectedRoute: () =>
     set((state) => ({ routes: state.routes.filter((r) => !r.selected) })),

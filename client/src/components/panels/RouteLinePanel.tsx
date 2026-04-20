@@ -37,6 +37,7 @@ export function RouteLinePanel() {
     activeRouteWidth, setActiveRouteWidth,
     draftPoints,
     routes,
+    updateRoute,
     deleteSelectedRoute,
     clearAllRoutes,
   } = useMapStore();
@@ -153,18 +154,67 @@ export function RouteLinePanel() {
 
           {selectedRoute && (
             <div style={{
-              padding: '6px 8px',
+              padding: '8px',
               background: 'var(--glass-border)',
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              display: 'flex', flexDirection: 'column', gap: '8px',
             }}>
-              <span style={{ ...labelStyle, fontSize: '11px' }}>Selected</span>
-              <button
-                className="action-btn danger"
-                style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 8px' }}
-                onClick={deleteSelectedRoute}
-              >
-                <Trash2 size={10} /> Delete
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ ...labelStyle, fontSize: '11px', fontWeight: 500 }}>Selected Route</span>
+                <button
+                  className="action-btn danger"
+                  style={{ display: 'flex', alignItems: 'center', gap: '3px', padding: '2px 6px' }}
+                  onClick={deleteSelectedRoute}
+                >
+                  <Trash2 size={10} /> Delete
+                </button>
+              </div>
+              {/* 선택 라인 굵기 */}
+              <SliderControl
+                label="Width"
+                value={selectedRoute.width}
+                min={1}
+                max={10}
+                step={0.5}
+                onChange={(v) => updateRoute(selectedRoute.id, { width: v })}
+                displayValue={`${selectedRoute.width.toFixed(1)}px`}
+              />
+              {/* 선택 라인 스타일 */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={labelStyle}>Style</span>
+                <div style={{ display: 'flex', gap: '4px' }}>
+                  {(['solid', 'dashed'] as const).map((s) => (
+                    <button key={s} onClick={() => updateRoute(selectedRoute.id, { lineStyle: s })}
+                      style={{
+                        padding: '2px 7px', fontFamily: "'DM Mono', monospace", fontSize: '10px',
+                        border: `1.5px solid ${selectedRoute.lineStyle === s ? 'var(--accent)' : 'var(--glass-border)'}`,
+                        background: selectedRoute.lineStyle === s ? 'var(--accent)' : 'transparent',
+                        color: selectedRoute.lineStyle === s ? 'white' : 'var(--section-label-color)',
+                        cursor: 'pointer',
+                      }}>
+                      {s === 'solid' ? '———' : '- - -'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {/* 선택 라인 종점 */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={labelStyle}>End</span>
+                <div style={{ display: 'flex', gap: '4px' }}>
+                  {CAP_OPTIONS.map(({ key, label, icon }) => (
+                    <button key={key} title={label}
+                      onClick={() => updateRoute(selectedRoute.id, { capStyle: key })}
+                      style={{
+                        width: 26, height: 22, fontFamily: "'DM Mono', monospace", fontSize: '11px',
+                        border: `1.5px solid ${selectedRoute.capStyle === key ? 'var(--accent)' : 'var(--glass-border)'}`,
+                        background: selectedRoute.capStyle === key ? 'var(--accent)' : 'transparent',
+                        color: selectedRoute.capStyle === key ? 'white' : 'var(--section-label-color)',
+                        cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}>
+                      {icon}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
         </>

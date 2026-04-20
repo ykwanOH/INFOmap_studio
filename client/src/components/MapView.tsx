@@ -394,6 +394,35 @@ export default function MapView() {
     return result;
   }
 
+  // ── 지리 거리 기반 균등 샘플러 ────────────────────────────────────────────
+  // coords: Catmull-Rom 출력 좌표 배열
+  // intervalDeg: 경도 기준 간격 (도 단위, 위도 보정 포함)
+  function sampleEvenlyByDistance(
+    coords: Array<[number, number]>,
+    intervalDeg: number
+  ): Array<[number, number]> {
+    if (coords.length < 2) return coords;
+    const result: Array<[number, number]> = [coords[0]];
+    let accumulated = 0;
+    for (let i = 1; i < coords.length; i++) {
+      const dx = (coords[i][0] - coords[i-1][0]) * Math.cos(coords[i-1][1] * Math.PI / 180);
+      const dy = coords[i][1] - coords[i-1][1];
+      accumulated += Math.sqrt(dx*dx + dy*dy);
+      if (accumulated >= intervalDeg) {
+        result.push(coords[i]);
+        accumulated = 0;
+      }
+    }
+    return result;
+  }
+
+  // ── 선분 끝 방향각 계산 (도, Mapbox bearing: 북=0, 시계방향) ──────────────
+  function calcBearing(from: [number, number], to: [number, number]): number {
+    const dLng = (to[0] - from[0]) * Math.cos(from[1] * Math.PI / 180);
+    const dLat = to[1] - from[1];
+    return (Math.atan2(dLng, dLat) * 180 / Math.PI + 360) % 360;
+  }
+
   // ── Route drawing (draft + committed routes) ────────────────────────────
   useEffect(() => {
     const map = mapRef.current;
@@ -1077,7 +1106,9 @@ function initCustomLayers(map: mapboxgl.Map) {
         'circle-stroke-color': '#ffffff',
       },
     });
-    // 종점 화살표 — 3배 크기, halo 없음
+    // 종점 화살표 — width 비례 크기, bearing 방향 회전, halo 없음
+    // text-size 기준: width=5 → 42px (3배 기준값)
+    // text-rotate: bearing 값 (Mapbox는 북=0 시계방향, text도 동일)
     map.addLayer({
       id: 'routes-committed-arrows',
       type: 'symbol',
@@ -1085,9 +1116,12 @@ function initCustomLayers(map: mapboxgl.Map) {
       filter: ['all', ['==', ['geometry-type'], 'Point'], ['==', ['get', 'role'], 'end'], ['==', ['get', 'capStyle'], 'arrow']],
       layout: {
         'text-field': '▶',
-        'text-size': 42,
+        'text-size': ['*', ['/', ['get', 'width'], 5], 42],
+        'text-rotate': ['get', 'bearing'],
+        'text-rotation-alignment': 'map',
         'text-allow-overlap': true,
         'text-ignore-placement': true,
+        'text-anchor': 'center',
       },
       paint: {
         'text-color': ['get', 'color'],
