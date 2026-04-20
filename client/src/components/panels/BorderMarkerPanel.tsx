@@ -7,10 +7,9 @@
  *   district — 구/시 경계: 서울 25구 + 각 도 시군 (기본 off, 0.6px)
  */
 
-import { useState } from 'react';
 import { useMapStore, type BorderLevel } from '@/store/useMapStore';
 import { SectionPanel, Toggle, SliderControl, ColorPicker } from '@/components/ui/SectionPanel';
-import { MapPin, X } from 'lucide-react';
+
 
 const labelStyle = {
   fontFamily: "'DM Sans', sans-serif",
@@ -27,45 +26,14 @@ const BORDER_LEVELS: { key: BorderLevel; label: string; sublabel: string }[] = [
   { key: 'district', label: 'District / Si-Gun', sublabel: '서울 구 · 각 도 시군' },
 ];
 
-const MARKER_COLORS = ['#e05c2a', '#2a7ae0', '#2aae5c', '#e0c02a', '#ae2ae0'];
-
 export function BorderMarkerPanel() {
   const {
     borders, setBorderEnabled, setBorderColor, setBorderWidth,
-    addMarker, clearMarkers, markers, mapInstance,
   } = useMapStore();
 
-  const [searchQuery, setSearchQuery] = useState('');
-  const [markerColor, setMarkerColor] = useState(MARKER_COLORS[0]);
-  const [isSearching, setIsSearching] = useState(false);
-
-  const handleMark = async () => {
-    if (!searchQuery.trim() || !mapInstance) return;
-    setIsSearching(true);
-    try {
-      const token =
-        (import.meta.env.VITE_MAPBOX_TOKEN as string) ||
-        '';
-      const res = await fetch(
-        `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(searchQuery)}.json?access_token=${token}&types=place,locality,region,country&limit=1`
-      );
-      const data = await res.json();
-      if (data.features?.length > 0) {
-        const [lng, lat] = data.features[0].center;
-        const name = data.features[0].place_name;
-        addMarker(lng, lat, name, markerColor);
-        mapInstance.flyTo({ center: [lng, lat], zoom: Math.max(mapInstance.getZoom(), 5), duration: 1200 });
-        setSearchQuery('');
-      }
-    } catch (e) {
-      console.error('Geocoding error', e);
-    } finally {
-      setIsSearching(false);
-    }
-  };
 
   return (
-    <SectionPanel sectionKey="borderMarker" title="Border & Marker">
+    <SectionPanel sectionKey="borderMarker" title="Border">
 
       {/* Border toggles */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -107,63 +75,6 @@ export function BorderMarkerPanel() {
         })}
       </div>
 
-
-      {/* Divider */}
-      <div style={{ height: 1, background: 'var(--glass-border)' }} />
-
-      {/* Marker search */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-        <span style={{ ...labelStyle, fontWeight: 500 }}>City Marker</span>
-        <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-          <input
-            type="text"
-            className="text-input"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleMark()}
-            placeholder="Search city..."
-            style={{ flex: 1 }}
-          />
-          <div style={{ display: 'flex', alignItems: 'center', gap: '3px', flexShrink: 0 }}>
-            {MARKER_COLORS.map((c) => (
-              <button
-                key={c}
-                onClick={() => setMarkerColor(c)}
-                style={{
-                  width: 10, height: 10, borderRadius: '50%', background: c,
-                  border: `1.5px solid ${markerColor === c ? 'var(--foreground)' : 'transparent'}`,
-                  cursor: 'pointer', flexShrink: 0,
-                }}
-              />
-            ))}
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: '4px' }}>
-          <button
-            className="action-btn"
-            style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
-            onClick={handleMark}
-            disabled={isSearching || !searchQuery.trim()}
-          >
-            <MapPin size={11} />
-            {isSearching ? 'Searching...' : 'Mark'}
-          </button>
-          <button
-            className="action-btn danger"
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
-            onClick={clearMarkers}
-            disabled={markers.length === 0}
-          >
-            <X size={11} />
-            Clear
-          </button>
-        </div>
-        {markers.length > 0 && (
-          <p style={{ ...labelStyle, fontSize: '11px', color: 'var(--muted-foreground)' }}>
-            {markers.length} marker{markers.length > 1 ? 's' : ''} placed
-          </p>
-        )}
-      </div>
     </SectionPanel>
   );
 }

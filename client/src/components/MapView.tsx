@@ -99,9 +99,12 @@ export default function MapView() {
   // countries.geojson 최초 1회 로드
   useEffect(() => {
     fetch('/countries.geojson')
-      .then(r => r.json())
-      .then(data => { countriesRef.current = data; })
-      .catch(e => console.warn('countries.geojson load failed', e));
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+      .then(data => {
+        countriesRef.current = data;
+        console.log(`[Pick] countries.geojson loaded: ${data.features?.length} features`);
+      })
+      .catch(e => console.error('[Pick] countries.geojson load FAILED:', e));
   }, []);
   const styleLoadedRef = useRef(false);
 
@@ -813,9 +816,11 @@ export default function MapView() {
           const countries = countriesRef.current;
           if (countries) {
             const pt = point([lng, lat]);
-            const found = countries.features.find((f) =>
-              f.geometry && booleanPointInPolygon(pt, f as any)
-            );
+            const found = countries.features.find((f) => {
+              if (!f.geometry) return false;
+              try { return booleanPointInPolygon(pt, f as any); }
+              catch { return false; }
+            });
             if (found && found.geometry) {
               const props = found.properties || {};
               const countryId = `country-${props.iso_n3 || props.name || pickId}`;
