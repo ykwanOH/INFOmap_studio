@@ -107,7 +107,7 @@ export default function MapView() {
     routes, selectRoute,
     flyFromPickMode, flyToPickMode, setFlyRouteFrom, setFlyRouteTo, setFlyFromPickMode, setFlyToPickMode,
     flyRoute,
-    pickMode, addPickedFeature, pickedFeatures,
+    pickMode, addPickedFeature, pickedFeatures, pickDisplayMode,
     extraLook,
   } = useMapStore();
 
@@ -636,14 +636,32 @@ export default function MapView() {
     const source = map.getSource('picked-features') as mapboxgl.GeoJSONSource | undefined;
     if (!source) return;
     const features: GeoJSON.Feature[] = pickedFeatures
-      .map((f) => ({
-        type: 'Feature' as const,
-        geometry: (f as any).geometry as GeoJSON.Geometry,
-        properties: { fillColor: f.fillColor, borderColor: f.borderColor, borderWidth: f.borderWidth, extrudeHeight: f.extrudeHeight },
-      }))
+      .map((f) => {
+        const h = f.floatHeight ?? 0;
+        // floating: base=h, height=h+thin slab (50km 고정 두께)
+        // extrude:  base=0, height=h
+        const extrudeBase   = pickDisplayMode === 'floating' ? h : 0;
+        const extrudeHeight = pickDisplayMode === 'floating' ? h + 50000 : h;
+        return {
+          type: 'Feature' as const,
+          geometry: (f as any).geometry as GeoJSON.Geometry,
+          properties: {
+            fillColor: f.fillColor,
+            borderColor: f.borderColor,
+            borderWidth: f.borderWidth,
+            extrudeHeight,
+            extrudeBase,
+          },
+        };
+      })
       .filter((f) => !!f.geometry);
     source.setData({ type: 'FeatureCollection', features });
-  }, [pickedFeatures]);
+    // 3D 모드 자동 전환 (floatHeight > 0이면 pitch 필요)
+    const hasHeight = pickedFeatures.some((f) => (f.floatHeight ?? 0) > 0);
+    if (hasHeight && map.getPitch() < 20) {
+      map.easeTo({ pitch: 40, duration: 600 });
+    }
+  }, [pickedFeatures, pickDisplayMode]);
 
   // ── Extra Look — CSS filter overlay on map canvas ───────────────────────
   useEffect(() => {
@@ -724,7 +742,7 @@ export default function MapView() {
               addPickedFeature({
                 id: pickId,
                 sourceLayer: 'korea-sgg',
-                fillColor: '#4a90d9', borderColor: '#2a5a9a', borderWidth: 1.5, extrudeHeight: 0,
+                fillColor: '#4a90d9', borderColor: '#2a5a9a', borderWidth: 1.5, floatHeight: 0,
                 geometry: pickGeometry,
                 meta: { type: 'korea-sgg', sgg, sggnm: feat.properties?.sggnm, sidonm: feat.properties?.sidonm },
               } as any);
@@ -745,7 +763,7 @@ export default function MapView() {
               addPickedFeature({
                 id: pickId,
                 sourceLayer: 'korea-sido',
-                fillColor: '#4a90d9', borderColor: '#2a5a9a', borderWidth: 1.5, extrudeHeight: 0,
+                fillColor: '#4a90d9', borderColor: '#2a5a9a', borderWidth: 1.5, floatHeight: 0,
                 geometry: pickGeometry,
                 meta: { type: 'korea-sido', sido, sidonm: feat.properties?.sidonm },
               } as any);
@@ -773,7 +791,7 @@ export default function MapView() {
           addPickedFeature({
             id: String(target.id ?? pickId),
             sourceLayer: target.layer?.['source-layer'] || '',
-            fillColor: '#4a90d9', borderColor: '#2a5a9a', borderWidth: 1.5, extrudeHeight: 0,
+            fillColor: '#4a90d9', borderColor: '#2a5a9a', borderWidth: 1.5, floatHeight: 0,
             geometry: target.geometry,
           } as any);
         }
@@ -1203,8 +1221,8 @@ function initCustomLayers(map: mapboxgl.Map) {
       paint: {
         'fill-extrusion-color': ['get', 'fillColor'],
         'fill-extrusion-height': ['get', 'extrudeHeight'],
-        'fill-extrusion-base': 0,
-        'fill-extrusion-opacity': 0.7,
+        'fill-extrusion-base': ['get', 'extrudeBase'],
+        'fill-extrusion-opacity': 0.75,
       },
     });
   }

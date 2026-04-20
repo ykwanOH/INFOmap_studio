@@ -44,13 +44,15 @@ export interface BorderConfig {
   width: number;
 }
 
+export type PickDisplayMode = 'floating' | 'extrude';
+
 export interface PickedFeature {
   id: string | number;
   sourceLayer: string;
   fillColor: string;
   borderColor: string;
   borderWidth: number;
-  extrudeHeight: number;
+  floatHeight: number;   // floating/extrude 공유 높이 (m)
   geometry?: GeoJSON.Geometry;
 }
 
@@ -122,6 +124,8 @@ export interface MapStoreState {
   // ── Pick and Push ──
   pickMode: boolean;
   setPickMode: (v: boolean) => void;
+  pickDisplayMode: PickDisplayMode;
+  setPickDisplayMode: (v: PickDisplayMode) => void;
   pickedFeatures: PickedFeature[];
   addPickedFeature: (f: PickedFeature) => void;
   updatePickedFeature: (id: string | number, updates: Partial<PickedFeature>) => void;
@@ -312,6 +316,8 @@ export const useMapStore = create<MapStoreState>((set, get) => ({
   // ── Pick and Push ──
   pickMode: false,
   setPickMode: (v) => set({ pickMode: v }),
+  pickDisplayMode: 'floating',
+  setPickDisplayMode: (v) => set({ pickDisplayMode: v }),
   pickedFeatures: [],
   addPickedFeature: (f) =>
     set((state) => ({ pickedFeatures: [...state.pickedFeatures, f] })),
