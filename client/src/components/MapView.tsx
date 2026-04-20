@@ -633,30 +633,52 @@ export default function MapView() {
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !styleLoadedRef.current) return;
-    const source = map.getSource('picked-features') as mapboxgl.GeoJSONSource | undefined;
-    if (!source) return;
-    const features: GeoJSON.Feature[] = pickedFeatures
-      .map((f) => {
-        const h = f.floatHeight ?? 0;
-        // floating: base=h, height=h+thin slab (50km 고정 두께)
-        // extrude:  base=0, height=h
-        const extrudeBase   = pickDisplayMode === 'floating' ? h : 0;
-        const extrudeHeight = pickDisplayMode === 'floating' ? h + 50000 : h;
-        return {
+
+    const baseFeatures: GeoJSON.Feature[] = pickedFeatures
+      .filter((f) => !!(f as any).geometry)
+      .map((f) => ({
+        type: 'Feature' as const,
+        geometry: (f as any).geometry as GeoJSON.Geometry,
+        properties: {
+          fillColor: f.fillColor,
+          borderColor: f.borderColor,
+          borderWidth: f.borderWidth,
+          extrudeHeight: f.floatHeight ?? 0,
+        },
+      }));
+
+    const baseSrc = map.getSource('picked-features') as mapboxgl.GeoJSONSource | undefined;
+    baseSrc?.setData({ type: 'FeatureCollection', features: baseFeatures });
+
+    if (pickDisplayMode === 'extrude') {
+      if (map.getLayer('picked-extrude'))       map.setLayoutProperty('picked-extrude', 'visibility', 'visible');
+      if (map.getLayer('picked-float-extrude')) map.setLayoutProperty('picked-float-extrude', 'visibility', 'none');
+      if (map.getLayer('picked-fill'))          map.setPaintProperty('picked-fill', 'fill-opacity', 0.2);
+    } else {
+      // floating 모드
+      if (map.getLayer('picked-extrude'))       map.setLayoutProperty('picked-extrude', 'visibility', 'none');
+      if (map.getLayer('picked-fill'))          map.setPaintProperty('picked-fill', 'fill-opacity', 0.35);
+
+      const SLAB = 8000;
+      const floatFeatures: GeoJSON.Feature[] = pickedFeatures
+        .filter((f) => !!(f as any).geometry && (f.floatHeight ?? 0) > 0)
+        .map((f) => ({
           type: 'Feature' as const,
           geometry: (f as any).geometry as GeoJSON.Geometry,
           properties: {
             fillColor: f.fillColor,
-            borderColor: f.borderColor,
-            borderWidth: f.borderWidth,
-            extrudeHeight,
-            extrudeBase,
+            floatBase: f.floatHeight ?? 0,
+            floatTop: (f.floatHeight ?? 0) + SLAB,
           },
-        };
-      })
-      .filter((f) => !!f.geometry);
-    source.setData({ type: 'FeatureCollection', features });
-    // 3D 모드 자동 전환 (floatHeight > 0이면 pitch 필요)
+        }));
+      const floatSrc = map.getSource('picked-float') as mapboxgl.GeoJSONSource | undefined;
+      floatSrc?.setData({ type: 'FeatureCollection', features: floatFeatures });
+      if (map.getLayer('picked-float-extrude')) {
+        map.setLayoutProperty('picked-float-extrude', 'visibility',
+          floatFeatures.length > 0 ? 'visible' : 'none');
+      }
+    }
+
     const hasHeight = pickedFeatures.some((f) => (f.floatHeight ?? 0) > 0);
     if (hasHeight && map.getPitch() < 20) {
       map.easeTo({ pitch: 40, duration: 600 });
@@ -778,13 +800,19 @@ export default function MapView() {
         }
 
         if (!stateOn || target === null) {
-          // country 기준 — Mapbox country-boundaries 폴리곤
-          const countryFeats = map.queryRenderedFeatures(e.point, {
-            layers: ['country-boundaries', 'admin-0-boundary'],
-          });
+          // country 기준 — 클릭 지점의 모든 fill feature 중 국가 단위 geometry 취득
+          // Mapbox streets-v12에서 국가 폴리곤은 'country-boundaries' 소스의 fill 레이어에 있음
           const allFeats = map.queryRenderedFeatures(e.point);
-          const landFeat = allFeats.find((f) => f.layer?.type === 'fill' && f.geometry?.type === 'Polygon');
-          target = countryFeats[0] || landFeat || null;
+          // 1순위: source-layer가 국가 단위인 것 (country_label, boundaries 등)
+          const countryFeat = allFeats.find((f) =>
+            f.geometry?.type === 'Polygon' || f.geometry?.type === 'MultiPolygon'
+          );
+          // 2순위: 모든 fill 레이어에서 가장 위에 있는 polygon
+          const landFeat = allFeats.find((f) =>
+            f.layer?.type === 'fill' &&
+            (f.geometry?.type === 'Polygon' || f.geometry?.type === 'MultiPolygon')
+          );
+          target = countryFeat || landFeat || null;
         }
 
         if (target && target.geometry) {
@@ -1209,20 +1237,37 @@ function initCustomLayers(map: mapboxgl.Map) {
       paint: { 'circle-radius': 7, 'circle-color': '#e05c2a', 'circle-stroke-width': 2.5, 'circle-stroke-color': '#ffffff' },
     });
   }
+  // picked-extrude 소스: extrude 모드용 (base=0, height=floatHeight)
   if (!map.getSource('picked-features')) {
     map.addSource('picked-features', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    // flat fill/border: 항상 렌더 (extrude 모드에서도 바닥 표시)
     map.addLayer({ id: 'picked-fill', type: 'fill', source: 'picked-features',
-      paint: { 'fill-color': ['get', 'fillColor'], 'fill-opacity': 0.55 },
+      paint: { 'fill-color': ['get', 'fillColor'], 'fill-opacity': 0.35 },
     });
     map.addLayer({ id: 'picked-border', type: 'line', source: 'picked-features',
       paint: { 'line-color': ['get', 'borderColor'], 'line-width': ['get', 'borderWidth'] },
     });
+    // extrude 레이어: extrude 모드 전용
     map.addLayer({ id: 'picked-extrude', type: 'fill-extrusion', source: 'picked-features',
+      layout: { visibility: 'none' },
       paint: {
         'fill-extrusion-color': ['get', 'fillColor'],
         'fill-extrusion-height': ['get', 'extrudeHeight'],
-        'fill-extrusion-base': ['get', 'extrudeBase'],
+        'fill-extrusion-base': 0,
         'fill-extrusion-opacity': 0.75,
+      },
+    });
+  }
+  // picked-float 소스: floating 모드용 (복사본이 공중에 뜸)
+  if (!map.getSource('picked-float')) {
+    map.addSource('picked-float', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addLayer({ id: 'picked-float-extrude', type: 'fill-extrusion', source: 'picked-float',
+      layout: { visibility: 'none' },
+      paint: {
+        'fill-extrusion-color': ['get', 'fillColor'],
+        'fill-extrusion-height': ['get', 'floatTop'],
+        'fill-extrusion-base': ['get', 'floatBase'],
+        'fill-extrusion-opacity': 0.85,
       },
     });
   }

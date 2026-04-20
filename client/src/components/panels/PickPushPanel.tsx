@@ -309,9 +309,7 @@ export function PickPushPanel() {
           min={0}
           max={500000}
           step={10000}
-          onChange={(v) => {
-            pickedFeatures.forEach((f) => updatePickedFeature(f.id, { floatHeight: v }));
-          }}
+          onChange={(v) => updatePickedFeature(lastPicked.id, { floatHeight: v })}
           displayValue={
             (lastPicked.floatHeight ?? 0) > 0
               ? `${((lastPicked.floatHeight ?? 0) / 1000).toFixed(0)}km`
