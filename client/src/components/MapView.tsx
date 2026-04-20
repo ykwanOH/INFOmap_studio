@@ -9,6 +9,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import mapboxgl from 'mapbox-gl';
 import { useMapStore } from '@/store/useMapStore';
+import { booleanPointInPolygon, point } from '@turf/turf';
 
 mapboxgl.accessToken =
   (import.meta.env.VITE_MAPBOX_TOKEN as string) ||
@@ -94,6 +95,14 @@ function getRoadLayersByTier(map: mapboxgl.Map, tier: 'expressway' | 'street' | 
 export default function MapView() {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
+  const countriesRef = useRef<GeoJSON.FeatureCollection | null>(null);
+  // countries.geojson 최초 1회 로드
+  useEffect(() => {
+    fetch('/countries.geojson')
+      .then(r => r.json())
+      .then(data => { countriesRef.current = data; })
+      .catch(e => console.warn('countries.geojson load failed', e));
+  }, []);
   const styleLoadedRef = useRef(false);
 
   const {
@@ -800,19 +809,26 @@ export default function MapView() {
         }
 
         if (!stateOn || target === null) {
-          // country 기준 — 클릭 지점의 모든 fill feature 중 국가 단위 geometry 취득
-          // Mapbox streets-v12에서 국가 폴리곤은 'country-boundaries' 소스의 fill 레이어에 있음
-          const allFeats = map.queryRenderedFeatures(e.point);
-          // 1순위: source-layer가 국가 단위인 것 (country_label, boundaries 등)
-          const countryFeat = allFeats.find((f) =>
-            f.geometry?.type === 'Polygon' || f.geometry?.type === 'MultiPolygon'
-          );
-          // 2순위: 모든 fill 레이어에서 가장 위에 있는 polygon
-          const landFeat = allFeats.find((f) =>
-            f.layer?.type === 'fill' &&
-            (f.geometry?.type === 'Polygon' || f.geometry?.type === 'MultiPolygon')
-          );
-          target = countryFeat || landFeat || null;
+          // country 기준 — countries.geojson에서 point-in-polygon으로 국가 탐색
+          const countries = countriesRef.current;
+          if (countries) {
+            const pt = point([lng, lat]);
+            const found = countries.features.find((f) =>
+              f.geometry && booleanPointInPolygon(pt, f as any)
+            );
+            if (found && found.geometry) {
+              const props = found.properties || {};
+              const countryId = `country-${props.iso_n3 || props.name || pickId}`;
+              addPickedFeature({
+                id: countryId,
+                sourceLayer: 'country',
+                fillColor: '#4a90d9', borderColor: '#2a5a9a', borderWidth: 1.5, floatHeight: 0,
+                geometry: found.geometry,
+                meta: { type: 'country', name: props.name, iso_n3: props.iso_n3 },
+              } as any);
+            }
+          }
+          return;
         }
 
         if (target && target.geometry) {
