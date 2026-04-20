@@ -52,31 +52,52 @@ export function HiResPanel() {
   const delta = hiResZoomDelta as 0 | 1 | 2;
   const mult  = MULT[delta];
 
+  // 세로 1080 기준, ×mult 적용
+  const BASE_H = 1080;
+  const getOutputSize = () => {
+    const src = mapInstance?.getCanvas();
+    if (!src) return { w: 0, h: 0 };
+    const aspect = src.width / src.height;
+    const outH = BASE_H * mult;
+    const outW = Math.round(outH * aspect);
+    return { w: outW, h: outH };
+  };
+  const { w: outW, h: outH } = getOutputSize();
+
   const handleCapture = useCallback(async () => {
     if (!mapInstance || hiResCapturing) return;
     setHiResCapturing(true);
-    setProgress('캡처 중...');
+    setProgress('렌더링 중...');
+
+    // 현재 pixelRatio 저장
+    const originalRatio = (mapInstance as any).getPixelRatio?.() ?? window.devicePixelRatio ?? 1;
 
     try {
-      const src = mapInstance.getCanvas();
-      const outW = src.width  * mult;
-      const outH = src.height * mult;
+      // 목표: 세로 BASE_H * mult 픽셀
+      // pixelRatio를 올려서 캔버스 자체를 고해상도로 렌더
+      const container = mapInstance.getContainer();
+      const cssH = container.clientHeight;
+      const targetRatio = (BASE_H * mult) / cssH;
 
-      const out = document.createElement('canvas');
-      out.width  = outW;
-      out.height = outH;
-      const ctx = out.getContext('2d')!;
-      ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = 'high';
-      ctx.drawImage(src, 0, 0, outW, outH);
+      (mapInstance as any).setPixelRatio(targetRatio);
+
+      // 렌더 완료까지 대기 (idle 이벤트)
+      await new Promise<void>((resolve) => {
+        mapInstance.once('idle', () => resolve());
+        mapInstance.triggerRepaint();
+        // 안전망: 3초 후 강제 resolve
+        setTimeout(resolve, 3000);
+      });
 
       setProgress('저장 중...');
-      out.toBlob(blob => {
+
+      const src = mapInstance.getCanvas();
+      src.toBlob(blob => {
         if (!blob) return;
         const url = URL.createObjectURL(blob);
         const a = Object.assign(document.createElement('a'), {
           href: url,
-          download: `macro_hires_${outW}x${outH}_${Date.now()}.png`,
+          download: `macro_hires_${src.width}x${src.height}_${Date.now()}.png`,
         });
         document.body.appendChild(a); a.click();
         document.body.removeChild(a);
@@ -89,15 +110,12 @@ export function HiResPanel() {
       setProgress(`오류: ${e.message}`);
       setTimeout(() => setProgress(null), 3000);
     } finally {
+      // pixelRatio 복원
+      (mapInstance as any).setPixelRatio(originalRatio);
+      mapInstance.triggerRepaint();
       setHiResCapturing(false);
     }
   }, [mapInstance, mult, hiResCapturing, setHiResCapturing]);
-
-  // 예상 출력 크기 계산 (현재 캔버스 기준)
-  const canvasW = mapInstance?.getCanvas().width  ?? 0;
-  const canvasH = mapInstance?.getCanvas().height ?? 0;
-  const outW = canvasW * mult;
-  const outH = canvasH * mult;
 
   return (
     <SectionPanel sectionKey="hiResCap" title="Hi-Res Capture">

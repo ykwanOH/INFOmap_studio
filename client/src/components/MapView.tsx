@@ -119,7 +119,7 @@ export default function MapView() {
     routes, selectRoute,
     flyFromPickMode, flyToPickMode, setFlyRouteFrom, setFlyRouteTo, setFlyFromPickMode, setFlyToPickMode,
     flyRoute,
-    pickMode, addPickedFeature, pickedFeatures, pickDisplayMode,
+    pickMode, addPickedFeature, pickedFeatures, pickDisplayMode, pickUnitMode,
     extraLook,
   } = useMapStore();
 
@@ -755,86 +755,24 @@ export default function MapView() {
       }
       if (pickMode) {
         const store = useMapStore.getState();
-        const stateOn = store.borders.state.enabled;
-        const districtOn = store.borders.district.enabled;
+        const pickId = `pick-${Date.now()}`;
+        const unit = store.pickUnitMode ?? 'country';
 
-        let target: mapboxgl.MapboxGeoJSONFeature | null = null;
-        let pickGeometry: GeoJSON.Geometry | null = null;
-        let pickId = `pick-${Date.now()}`;
-
-        if (districtOn) {
-          // district ON → 한국 sgg 레벨 우선 (읍면동 → sgg 코드로 그룹)
-          const koFeats = map.queryRenderedFeatures(e.point, { layers: ['korea-sido-fill', 'korea-sgg-fill'] });
-          if (koFeats.length > 0) {
-            const feat = koFeats[0];
-            const sgg = feat.properties?.sgg as string | undefined;
-            if (sgg) {
-              // 같은 sgg 코드의 모든 읍면동 feature를 모아 geometry 반환
-              // (실제 dissolve는 export 시 turf로 처리, 여기선 각 읍면동 개별 저장)
-              pickId = `korea-sgg-${sgg}`;
-              pickGeometry = feat.geometry;
-              addPickedFeature({
-                id: pickId,
-                sourceLayer: 'korea-sgg',
-                fillColor: '#4a90d9', borderColor: '#2a5a9a', borderWidth: 1.5, floatHeight: 0,
-                geometry: pickGeometry,
-                meta: { type: 'korea-sgg', sgg, sggnm: feat.properties?.sggnm, sidonm: feat.properties?.sidonm },
-              } as any);
-              return;
-            }
-          }
-        }
-
-        if (stateOn && !districtOn) {
-          // state ON, district OFF → 한국 sido 레벨 또는 Mapbox admin_1
-          const koFeats = map.queryRenderedFeatures(e.point, { layers: ['korea-sido-fill', 'korea-sgg-fill'] });
-          if (koFeats.length > 0) {
-            const feat = koFeats[0];
-            const sido = feat.properties?.sido as string | undefined;
-            if (sido) {
-              pickId = `korea-sido-${sido}`;
-              pickGeometry = feat.geometry;
-              addPickedFeature({
-                id: pickId,
-                sourceLayer: 'korea-sido',
-                fillColor: '#4a90d9', borderColor: '#2a5a9a', borderWidth: 1.5, floatHeight: 0,
-                geometry: pickGeometry,
-                meta: { type: 'korea-sido', sido, sidonm: feat.properties?.sidonm },
-              } as any);
-              return;
-            }
-          }
-          // 한국 아닌 경우 Mapbox admin_1
-          const adminFeats = map.queryRenderedFeatures(e.point, {
-            layers: ['macro-admin-state'],
-          });
-          target = adminFeats[0] || null;
-        }
-
-        if (!stateOn || target === null) {
-          // country 기준 — countries.geojson에서 point-in-polygon으로 국가 탐색
+        if (unit === 'country') {
+          // ── 국가 단위: countries.geojson point-in-polygon ──
           const countries = countriesRef.current;
-          console.log('[Pick] click', { lng, lat, countriesLoaded: !!countries, featureCount: countries?.features?.length });
           if (countries) {
             const pt = point([lng, lat]);
             let found: GeoJSON.Feature | undefined;
             for (const f of countries.features) {
               if (!f.geometry) continue;
-              try {
-                if (booleanPointInPolygon(pt, f as any)) {
-                  found = f;
-                  break;
-                }
-              } catch(e) {
-                console.warn('[Pick] pip error', e);
-              }
+              try { if (booleanPointInPolygon(pt, f as any)) { found = f; break; } }
+              catch { /* skip */ }
             }
-            console.log('[Pick] found:', found?.properties);
             if (found && found.geometry) {
               const props = found.properties || {};
-              const countryId = `country-${props.iso_n3 || props.name || pickId}`;
               addPickedFeature({
-                id: countryId,
+                id: `country-${props.iso_n3 || props.name || pickId}`,
                 sourceLayer: 'country',
                 fillColor: '#4a90d9', borderColor: '#2a5a9a', borderWidth: 1.5, floatHeight: 0,
                 geometry: found.geometry,
@@ -845,15 +783,52 @@ export default function MapView() {
           return;
         }
 
-        if (target && target.geometry) {
-          addPickedFeature({
-            id: String(target.id ?? pickId),
-            sourceLayer: target.layer?.['source-layer'] || '',
-            fillColor: '#4a90d9', borderColor: '#2a5a9a', borderWidth: 1.5, floatHeight: 0,
-            geometry: target.geometry,
-          } as any);
+        if (unit === 'state') {
+          // ── 주/도 단위 ──
+          // 한국: sgg(시군구) 또는 sido(광역)
+          const koFeats = map.queryRenderedFeatures(e.point, { layers: ['korea-sgg-fill', 'korea-sido-fill'] });
+          if (koFeats.length > 0) {
+            const feat = koFeats[0];
+            // zoom 7 이상이면 sgg(시군구), 미만이면 sido(광역)
+            const usesSgg = map.getZoom() >= 7;
+            if (usesSgg) {
+              const sgg = feat.properties?.sgg as string | undefined;
+              if (sgg) {
+                addPickedFeature({
+                  id: `korea-sgg-${sgg}`,
+                  sourceLayer: 'korea-sgg',
+                  fillColor: '#4a90d9', borderColor: '#2a5a9a', borderWidth: 1.5, floatHeight: 0,
+                  geometry: feat.geometry,
+                  meta: { type: 'korea-sgg', sgg, sggnm: feat.properties?.sggnm, sidonm: feat.properties?.sidonm },
+                } as any);
+                return;
+              }
+            }
+            const sido = feat.properties?.sido as string | undefined;
+            if (sido) {
+              addPickedFeature({
+                id: `korea-sido-${sido}`,
+                sourceLayer: 'korea-sido',
+                fillColor: '#4a90d9', borderColor: '#2a5a9a', borderWidth: 1.5, floatHeight: 0,
+                geometry: feat.geometry,
+                meta: { type: 'korea-sido', sido, sidonm: feat.properties?.sidonm },
+              } as any);
+              return;
+            }
+          }
+          // 한국 외: Mapbox admin_1 레이어
+          const adminFeats = map.queryRenderedFeatures(e.point, { layers: ['admin-1-boundary', 'macro-admin-state'] });
+          const adminTarget = adminFeats[0] || null;
+          if (adminTarget?.geometry) {
+            addPickedFeature({
+              id: String(adminTarget.id ?? pickId),
+              sourceLayer: adminTarget.layer?.['source-layer'] || '',
+              fillColor: '#4a90d9', borderColor: '#2a5a9a', borderWidth: 1.5, floatHeight: 0,
+              geometry: adminTarget.geometry,
+            } as any);
+          }
+          return;
         }
-        return;
       }
     },
     [isDrawingRoute, flyFromPickMode, flyToPickMode, pickMode, addDraftPoint,

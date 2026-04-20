@@ -45,6 +45,7 @@ export interface BorderConfig {
 }
 
 export type PickDisplayMode = 'floating' | 'extrude';
+export type PickUnitMode = 'country' | 'state';
 
 export interface PickedFeature {
   id: string | number;
@@ -126,6 +127,8 @@ export interface MapStoreState {
   setPickMode: (v: boolean) => void;
   pickDisplayMode: PickDisplayMode;
   setPickDisplayMode: (v: PickDisplayMode) => void;
+  pickUnitMode: PickUnitMode;
+  setPickUnitMode: (v: PickUnitMode) => void;
   pickedFeatures: PickedFeature[];
   addPickedFeature: (f: PickedFeature) => void;
   updatePickedFeature: (id: string | number, updates: Partial<PickedFeature>) => void;
@@ -318,9 +321,15 @@ export const useMapStore = create<MapStoreState>((set, get) => ({
   setPickMode: (v) => set({ pickMode: v }),
   pickDisplayMode: 'floating',
   setPickDisplayMode: (v) => set({ pickDisplayMode: v }),
+  pickUnitMode: 'country',
+  setPickUnitMode: (v) => set({ pickUnitMode: v }),
   pickedFeatures: [],
   addPickedFeature: (f) =>
-    set((state) => ({ pickedFeatures: [...state.pickedFeatures, f] })),
+    set((state) => {
+      const exists = state.pickedFeatures.find((p) => p.id === f.id);
+      if (exists) return { pickedFeatures: state.pickedFeatures.filter((p) => p.id !== f.id) };
+      return { pickedFeatures: [...state.pickedFeatures, f] };
+    }),
   updatePickedFeature: (id, updates) =>
     set((state) => ({
       pickedFeatures: state.pickedFeatures.map((f) =>

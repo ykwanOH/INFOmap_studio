@@ -8,7 +8,7 @@
  */
 
 import { useState } from 'react';
-import { useMapStore, type PickDisplayMode } from '@/store/useMapStore';
+import { useMapStore, type PickDisplayMode, type PickUnitMode } from '@/store/useMapStore';
 import { SectionPanel, SliderControl, ColorPicker, Toggle } from '@/components/ui/SectionPanel';
 import { MousePointer2, RotateCcw, Trash2, X, Download, Square, CheckSquare } from 'lucide-react';
 
@@ -254,6 +254,22 @@ export function PickPushPanel() {
       <div style={{ padding: '3px 8px', background: 'var(--glass-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <span style={{ ...labelStyle, fontSize: '10px', color: 'var(--muted-foreground)' }}>단위</span>
         <span style={{ ...labelStyle, fontSize: '10px', color: 'var(--accent)', fontWeight: 600 }}>{pickUnit}</span>
+      </div>
+
+      {/* Pick 단위 선택 */}
+      <div style={{ display: 'flex', gap: '4px' }}>
+        {(['country', 'state'] as PickUnitMode[]).map((u) => (
+          <button key={u} onClick={() => setPickUnitMode(u)} style={{
+            flex: 1, padding: '4px 0', fontSize: '11px',
+            fontFamily: "'DM Sans', sans-serif",
+            border: `1.5px solid ${pickUnitMode === u ? 'var(--accent)' : 'var(--glass-border)'}`,
+            background: pickUnitMode === u ? 'var(--accent)' : 'transparent',
+            color: pickUnitMode === u ? 'white' : 'var(--section-label-color)',
+            cursor: 'pointer',
+          }}>
+            {u === 'country' ? '🌍 국가' : '📍 주 · 구'}
+          </button>
+        ))}
       </div>
 
       {/* Pick + Clear + Reset */}

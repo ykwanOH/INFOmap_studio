@@ -160,12 +160,12 @@ export function ControlPanel() {
           <PanelSectionDivider />
 
           <MapToastPanel />
-          <HiResPanel />
 
           <PanelSectionDivider />
 
           <PickPushPanel />
           <RouteLinePanel />
+          <HiResPanel />
 
           <PanelSectionDivider />
 
