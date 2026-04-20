@@ -26,6 +26,7 @@ export interface RouteSegment {
   color: string;
   lineStyle: RouteLineStyle;
   capStyle: RouteCapStyle;
+  width: number;                     // 라인 굵기 (px)
   selected: boolean;
 }
 
@@ -138,6 +139,10 @@ export interface MapStoreState {
   setActiveRouteLineStyle: (s: RouteLineStyle) => void;
   activeRouteCapStyle: RouteCapStyle;
   setActiveRouteCapStyle: (s: RouteCapStyle) => void;
+  activeRouteWidth: number;
+  setActiveRouteWidth: (v: number) => void;
+  draftDragPoint: [number, number] | null;         // 드래그 중 마우스 위치 (곡률 미리보기)
+  setDraftDragPoint: (pt: [number, number] | null) => void;
   addDraftPoint: (pt: [number, number]) => void;
   undoLastDraftPoint: () => void;                  // Backspace
   commitRoute: () => void;                         // Enter — draft → route
@@ -329,6 +334,10 @@ export const useMapStore = create<MapStoreState>((set, get) => ({
   setActiveRouteLineStyle: (s) => set({ activeRouteLineStyle: s }),
   activeRouteCapStyle: 'none',
   setActiveRouteCapStyle: (s) => set({ activeRouteCapStyle: s }),
+  activeRouteWidth: 2.5,
+  setActiveRouteWidth: (v) => set({ activeRouteWidth: v }),
+  draftDragPoint: null,
+  setDraftDragPoint: (pt) => set({ draftDragPoint: pt }),
   addDraftPoint: (pt) =>
     set((state) => ({ draftPoints: [...state.draftPoints, pt] })),
   undoLastDraftPoint: () =>
@@ -342,9 +351,10 @@ export const useMapStore = create<MapStoreState>((set, get) => ({
         color: state.activeRouteColor,
         lineStyle: state.activeRouteLineStyle,
         capStyle: state.activeRouteCapStyle,
+        width: state.activeRouteWidth,
         selected: false,
       };
-      return { routes: [...state.routes, newRoute], draftPoints: [], isDrawingRoute: false };
+      return { routes: [...state.routes, newRoute], draftPoints: [], draftDragPoint: null, isDrawingRoute: false };
     }),
   selectRoute: (id) =>
     set((state) => ({
@@ -352,7 +362,7 @@ export const useMapStore = create<MapStoreState>((set, get) => ({
     })),
   deleteSelectedRoute: () =>
     set((state) => ({ routes: state.routes.filter((r) => !r.selected) })),
-  clearAllRoutes: () => set({ routes: [], draftPoints: [] }),
+  clearAllRoutes: () => set({ routes: [], draftPoints: [], draftDragPoint: null }),
   terrainExaggeration: 1.0,
   setTerrainExaggeration: (v) => set({ terrainExaggeration: v }),
   hillshadeEnabled: false,

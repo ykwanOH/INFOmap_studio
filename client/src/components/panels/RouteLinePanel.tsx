@@ -10,7 +10,7 @@
  */
 
 import { useMapStore, type RouteCapStyle, type RouteLineStyle } from '@/store/useMapStore';
-import { SectionPanel, ColorPicker } from '@/components/ui/SectionPanel';
+import { SectionPanel, ColorPicker, SliderControl } from '@/components/ui/SectionPanel';
 import { Pen, Trash2 } from 'lucide-react';
 
 const labelStyle = {
@@ -34,6 +34,7 @@ export function RouteLinePanel() {
     activeRouteColor, setActiveRouteColor,
     activeRouteLineStyle, setActiveRouteLineStyle,
     activeRouteCapStyle, setActiveRouteCapStyle,
+    activeRouteWidth, setActiveRouteWidth,
     draftPoints,
     routes,
     deleteSelectedRoute,
@@ -121,6 +122,17 @@ export function RouteLinePanel() {
           ))}
         </div>
       </div>
+
+      {/* Width slider */}
+      <SliderControl
+        label="Width"
+        value={activeRouteWidth}
+        min={1}
+        max={10}
+        step={0.5}
+        onChange={setActiveRouteWidth}
+        displayValue={`${activeRouteWidth.toFixed(1)}px`}
+      />
 
       {/* Routes list */}
       {routes.length > 0 && (

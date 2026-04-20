@@ -102,8 +102,8 @@ export default function MapView() {
     borders, colors,
     showLabels, showRoads,
     terrainExaggeration, hillshadeEnabled,
-    isDrawingRoute, activeRouteColor,
-    draftPoints, addDraftPoint, undoLastDraftPoint, commitRoute,
+    isDrawingRoute, activeRouteColor, activeRouteWidth,
+    draftPoints, draftDragPoint, addDraftPoint, undoLastDraftPoint, commitRoute,
     routes, selectRoute,
     flyFromPickMode, flyToPickMode, setFlyRouteFrom, setFlyRouteTo, setFlyFromPickMode, setFlyToPickMode,
     flyRoute,
@@ -398,14 +398,20 @@ export default function MapView() {
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !styleLoadedRef.current) return;
+    const st = useMapStore.getState();
+    const isDashed = st.activeRouteLineStyle === 'dashed';
 
-    // 1) Draft (그리는 중인 라인)
-    const draftSource = map.getSource('route-draw') as mapboxgl.GeoJSONSource | undefined;
-    if (draftSource) {
-      const coords = draftPoints.length >= 2
-        ? catmullRomToGeojson(draftPoints)
+    // 1) Draft line source
+    const draftLineSource = map.getSource('route-draw') as mapboxgl.GeoJSONSource | undefined;
+    if (draftLineSource) {
+      // draftDragPoint 있으면 마지막 점으로 붙여서 미리보기
+      const previewPts: Array<[number, number]> = draftDragPoint && draftPoints.length >= 1
+        ? [...draftPoints, draftDragPoint]
         : draftPoints;
-      draftSource.setData({
+      const coords = previewPts.length >= 2
+        ? catmullRomToGeojson(previewPts)
+        : previewPts;
+      draftLineSource.setData({
         type: 'Feature',
         geometry: { type: 'LineString', coordinates: coords },
         properties: {},
@@ -413,12 +419,50 @@ export default function MapView() {
     }
     if (map.getLayer('route-draw-line')) {
       map.setPaintProperty('route-draw-line', 'line-color', activeRouteColor);
-      map.setPaintProperty('route-draw-line', 'line-width', 2.5);
-      map.setPaintProperty('route-draw-line', 'line-dasharray',
-        useMapStore.getState().activeRouteLineStyle === 'dashed' ? [4, 3] : [1]);
+      map.setPaintProperty('route-draw-line', 'line-width', activeRouteWidth);
+      // 실선은 dasharray 없음, 점선은 도트 간격으로
+      if (!isDashed) {
+        map.setPaintProperty('route-draw-line', 'line-dasharray', [1]);
+      }
     }
 
-    // 2) Committed routes — GeoJSON FeatureCollection으로 한 번에 관리
+    // 2) Draft dots source (점선 도트 레이어)
+    const draftDotsSource = map.getSource('route-draw-dots') as mapboxgl.GeoJSONSource | undefined;
+    if (draftDotsSource) {
+      const previewPts: Array<[number, number]> = draftDragPoint && draftPoints.length >= 1
+        ? [...draftPoints, draftDragPoint]
+        : draftPoints;
+      const coords = previewPts.length >= 2 ? catmullRomToGeojson(previewPts, 96) : previewPts;
+      // 일정 간격으로 도트 포인트 샘플링 (전체 점의 1/5 간격)
+      const dotFeatures: GeoJSON.Feature[] = [];
+      // 도트 radius = activeRouteWidth/2, 간격 = radius * 3.5 (붙지 않도록)
+      // coords는 ~48 samples/세그먼트 → 이웃 coord 간 거리는 거의 일정
+      // 간격 step: width 클수록 더 띄워야 함
+      const dotRadius = activeRouteWidth / 2;
+      const dotGap = Math.max(3, Math.round(dotRadius * 3.5)); // 최소 3 index 간격
+      for (let i = 0; i < coords.length; i += dotGap) {
+        dotFeatures.push({
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: coords[i] },
+          properties: { color: activeRouteColor, radius: dotRadius },
+        });
+      }
+      draftDotsSource.setData({ type: 'FeatureCollection', features: isDashed ? dotFeatures : [] });
+    }
+
+    // 3) Draft start cap (시작점 항상 원형)
+    const draftCapSource = map.getSource('route-draw-cap') as mapboxgl.GeoJSONSource | undefined;
+    if (draftCapSource && draftPoints.length >= 1) {
+      draftCapSource.setData({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: draftPoints[0] },
+        properties: { color: activeRouteColor },
+      });
+    } else if (draftCapSource) {
+      draftCapSource.setData({ type: 'FeatureCollection', features: [] });
+    }
+
+    // 4) Committed routes
     const committedSource = map.getSource('routes-committed') as mapboxgl.GeoJSONSource | undefined;
     if (committedSource) {
       const features: GeoJSON.Feature[] = [];
@@ -426,7 +470,6 @@ export default function MapView() {
         const coords = route.points.length >= 2
           ? catmullRomToGeojson(route.points)
           : route.points;
-        // 메인 라인
         features.push({
           type: 'Feature',
           id: route.id,
@@ -435,31 +478,47 @@ export default function MapView() {
             id: route.id,
             color: route.color,
             lineStyle: route.lineStyle,
+            width: route.width,
             selected: route.selected,
             capStyle: route.capStyle,
           },
         });
-        // 시점/종점 캡
+        // 시작점 항상 원형
+        if (route.points.length >= 1) {
+          features.push({
+            type: 'Feature',
+            id: `${route.id}-start`,
+            geometry: { type: 'Point', coordinates: route.points[0] },
+            properties: { id: route.id, color: route.color, role: 'start', width: route.width },
+          });
+        }
+        // 종점 캡 (arrow or circle, capStyle에 따라)
         if (route.capStyle !== 'none' && route.points.length >= 2) {
-          const first = route.points[0];
-          const last = route.points[route.points.length - 1];
           features.push({
             type: 'Feature',
-            id: `${route.id}-cap-start`,
-            geometry: { type: 'Point', coordinates: first },
-            properties: { id: route.id, color: route.color, capStyle: route.capStyle, capRole: 'start' },
+            id: `${route.id}-end`,
+            geometry: { type: 'Point', coordinates: route.points[route.points.length - 1] },
+            properties: { id: route.id, color: route.color, capStyle: route.capStyle, role: 'end', width: route.width },
           });
-          features.push({
-            type: 'Feature',
-            id: `${route.id}-cap-end`,
-            geometry: { type: 'Point', coordinates: last },
-            properties: { id: route.id, color: route.color, capStyle: route.capStyle, capRole: 'end' },
-          });
+        }
+        // 도트 (점선)
+        if (route.lineStyle === 'dashed') {
+          const dotCoords = catmullRomToGeojson(route.points, 96);
+          const dotRadius = route.width / 2;
+          const dotGap = Math.max(3, Math.round(dotRadius * 3.5));
+          for (let i = 0; i < dotCoords.length; i += dotGap) {
+            features.push({
+              type: 'Feature',
+              id: `${route.id}-dot-${i}`,
+              geometry: { type: 'Point', coordinates: dotCoords[i] },
+              properties: { id: route.id, color: route.color, role: 'dot', width: route.width },
+            });
+          }
         }
       }
       committedSource.setData({ type: 'FeatureCollection', features });
     }
-  }, [draftPoints, activeRouteColor, routes]);
+  }, [draftPoints, draftDragPoint, activeRouteColor, activeRouteWidth, routes]);
 
   // ── Fly route visualization ─────────────────────────────────────────────
   useEffect(() => {
@@ -713,6 +772,26 @@ export default function MapView() {
     return () => { map.off('click', onClick); };
   }, [selectRoute]);
 
+  // ── Mouse move → draft 곡률 미리보기 (마지막 점 이후 커서 위치 추적) ──────
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const onMove = (e: mapboxgl.MapMouseEvent) => {
+      const state = useMapStore.getState();
+      if (!state.isDrawingRoute || state.draftPoints.length === 0) return;
+      state.setDraftDragPoint([e.lngLat.lng, e.lngLat.lat]);
+    };
+    const onLeave = () => {
+      useMapStore.getState().setDraftDragPoint(null);
+    };
+    map.on('mousemove', onMove);
+    map.on('mouseout', onLeave);
+    return () => {
+      map.off('mousemove', onMove);
+      map.off('mouseout', onLeave);
+    };
+  }, []);
+
   return (
     <div
       ref={containerRef}
@@ -893,33 +972,47 @@ function initCustomLayers(map: mapboxgl.Map) {
   if (!map.getSource('mapbox-dem')) {
     map.addSource('mapbox-dem', { type: 'raster-dem', url: 'mapbox://mapbox.mapbox-terrain-dem-v1', tileSize: 512, maxzoom: 14 });
   }
+  // ── Draft: 라인, 도트(점선), 시작 캡 ─────────────────────────────────────
   if (!map.getSource('route-draw')) {
-    map.addSource('route-draw', { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: [] }, properties: {} } });
-    map.addLayer({ id: 'route-draw-line', type: 'line', source: 'route-draw',
+    map.addSource('route-draw', {
+      type: 'geojson',
+      data: { type: 'Feature', geometry: { type: 'LineString', coordinates: [] }, properties: {} },
+    });
+    map.addLayer({
+      id: 'route-draw-line', type: 'line', source: 'route-draw',
       layout: { 'line-join': 'round', 'line-cap': 'round' },
       paint: { 'line-color': '#e05c2a', 'line-width': 2.5, 'line-opacity': 0.9 },
     });
   }
-  if (!map.getSource('routes-committed')) {
-    map.addSource('routes-committed', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-    // 메인 라인 레이어
+  if (!map.getSource('route-draw-dots')) {
+    map.addSource('route-draw-dots', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
     map.addLayer({
-      id: 'routes-committed-line',
-      type: 'line',
-      source: 'routes-committed',
-      filter: ['==', ['geometry-type'], 'LineString'],
-      layout: { 'line-join': 'round', 'line-cap': 'round' },
+      id: 'route-draw-dots-layer', type: 'circle', source: 'route-draw-dots',
       paint: {
-        'line-color': ['get', 'color'],
-        'line-width': ['case', ['get', 'selected'], 4, 2.5],
-        'line-opacity': 0.95,
-        'line-dasharray': ['case',
-          ['==', ['get', 'lineStyle'], 'dashed'], ['literal', [4, 3]],
-          ['literal', [1]],
-        ],
+        'circle-radius': ['/', ['get', 'radius'], 1],  // properties.radius로 전달
+        'circle-color': ['get', 'color'],
+        'circle-opacity': 0.9,
       },
     });
-    // 선택 하이라이트 (선택 시 흰 외곽선)
+  }
+  if (!map.getSource('route-draw-cap')) {
+    map.addSource('route-draw-cap', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addLayer({
+      id: 'route-draw-cap-layer', type: 'circle', source: 'route-draw-cap',
+      paint: {
+        'circle-radius': 7.5,      // 기본 5 × 1.5
+        'circle-color': ['get', 'color'],
+        'circle-stroke-width': 2,
+        'circle-stroke-color': '#ffffff',
+        'circle-opacity': 1,
+      },
+    });
+  }
+  // ── Committed routes ────────────────────────────────────────────────────
+  if (!map.getSource('routes-committed')) {
+    map.addSource('routes-committed', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+
+    // 선택 하이라이트 (메인 라인 아래)
     map.addLayer({
       id: 'routes-committed-select',
       type: 'line',
@@ -928,40 +1021,76 @@ function initCustomLayers(map: mapboxgl.Map) {
       layout: { 'line-join': 'round', 'line-cap': 'round' },
       paint: {
         'line-color': '#ffffff',
-        'line-width': 7,
+        'line-width': ['+', ['get', 'width'], 5],
         'line-opacity': 0.35,
         'line-blur': 2,
       },
-    }, 'routes-committed-line'); // 메인 라인 아래에 렌더
-    // 캡 포인트 레이어 (circle/arrow 공통 — arrow는 심볼로 별도)
+    });
+    // 메인 라인 (실선 전용 — 점선은 dot 레이어로)
     map.addLayer({
-      id: 'routes-committed-caps',
+      id: 'routes-committed-line',
+      type: 'line',
+      source: 'routes-committed',
+      filter: ['all', ['==', ['geometry-type'], 'LineString'], ['!=', ['get', 'lineStyle'], 'dashed']],
+      layout: { 'line-join': 'round', 'line-cap': 'round' },
+      paint: {
+        'line-color': ['get', 'color'],
+        'line-width': ['get', 'width'],
+        'line-opacity': 0.95,
+      },
+    });
+    // 점선: 도트 포인트 레이어
+    map.addLayer({
+      id: 'routes-committed-dots',
       type: 'circle',
       source: 'routes-committed',
-      filter: ['all', ['==', ['geometry-type'], 'Point'], ['==', ['get', 'capStyle'], 'circle']],
+      filter: ['==', ['geometry-type'], 'Point'],
       paint: {
-        'circle-radius': 5,
+        'circle-radius': ['/', ['get', 'width'], 1.6],
+        'circle-color': ['get', 'color'],
+        'circle-opacity': ['case', ['==', ['get', 'role'], 'dot'], 0.88, 0],
+      },
+    });
+    // 시작점 항상 원형 (1.5배)
+    map.addLayer({
+      id: 'routes-committed-start',
+      type: 'circle',
+      source: 'routes-committed',
+      filter: ['all', ['==', ['geometry-type'], 'Point'], ['==', ['get', 'role'], 'start']],
+      paint: {
+        'circle-radius': ['*', ['get', 'width'], 1.5],
         'circle-color': ['get', 'color'],
         'circle-stroke-width': 2,
         'circle-stroke-color': '#ffffff',
       },
     });
-    // 화살표 심볼 레이어
+    // 종점 circle 캡
+    map.addLayer({
+      id: 'routes-committed-end-circle',
+      type: 'circle',
+      source: 'routes-committed',
+      filter: ['all', ['==', ['geometry-type'], 'Point'], ['==', ['get', 'role'], 'end'], ['==', ['get', 'capStyle'], 'circle']],
+      paint: {
+        'circle-radius': ['*', ['get', 'width'], 1.5],
+        'circle-color': ['get', 'color'],
+        'circle-stroke-width': 2,
+        'circle-stroke-color': '#ffffff',
+      },
+    });
+    // 종점 화살표 — 3배 크기, halo 없음
     map.addLayer({
       id: 'routes-committed-arrows',
       type: 'symbol',
       source: 'routes-committed',
-      filter: ['all', ['==', ['geometry-type'], 'Point'], ['==', ['get', 'capStyle'], 'arrow']],
+      filter: ['all', ['==', ['geometry-type'], 'Point'], ['==', ['get', 'role'], 'end'], ['==', ['get', 'capStyle'], 'arrow']],
       layout: {
         'text-field': '▶',
-        'text-size': 14,
+        'text-size': 42,
         'text-allow-overlap': true,
         'text-ignore-placement': true,
       },
       paint: {
         'text-color': ['get', 'color'],
-        'text-halo-color': '#ffffff',
-        'text-halo-width': 1.5,
       },
     });
   }
