@@ -251,12 +251,6 @@ export function PickPushPanel() {
   return (
     <SectionPanel sectionKey="pickPush" title="Pick & Export">
 
-      {/* Pick 단위 */}
-      <div style={{ padding: '3px 8px', background: 'var(--glass-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{ ...labelStyle, fontSize: '10px', color: 'var(--muted-foreground)' }}>단위</span>
-        <span style={{ ...labelStyle, fontSize: '10px', color: 'var(--accent)', fontWeight: 600 }}>{pickUnit}</span>
-      </div>
-
       {/* Pick 단위 선택 */}
       <div style={{ display: 'flex', gap: '4px' }}>
         {(['country', 'state'] as PickUnitMode[]).map((u) => (
@@ -324,8 +318,8 @@ export function PickPushPanel() {
           label={pickDisplayMode === 'floating' ? 'Float Height' : 'Extrude Height'}
           value={lastPicked.floatHeight ?? 0}
           min={0}
-          max={500000}
-          step={10000}
+          max={200000}
+          step={2000}
           onChange={(v) => updatePickedFeature(lastPicked.id, { floatHeight: v })}
           displayValue={
             (lastPicked.floatHeight ?? 0) > 0

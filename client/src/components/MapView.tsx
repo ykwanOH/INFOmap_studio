@@ -251,29 +251,52 @@ export default function MapView() {
     const stateCfg    = borders.state;
     const districtCfg = borders.district;
 
-    // ── 국경 (country) — streets-v12 기존 레이어 직접 제어 ───────────────
-    for (const id of ['admin-0-boundary', 'admin-0-boundary-disputed']) {
-      if (!map.getLayer(id)) continue;
-      try {
-        map.setLayoutProperty(id, 'visibility', countryCfg.enabled ? 'visible' : 'none');
-        map.setPaintProperty(id, 'line-color', countryCfg.color);
-        map.setPaintProperty(id, 'line-width', ['interpolate', ['linear'], ['zoom'],
-          3, countryCfg.width * 0.6, 6, countryCfg.width, 10, countryCfg.width * 1.4,
-        ]);
-        map.setPaintProperty(id, 'line-opacity', 0.9);
-      } catch (_) {}
+    // ── 국경 (country) — Mapbox 스타일 내 모든 admin-0 레이어 제어 ───────
+    // borderTouched 여부와 관계없이 enabled 상태로 제어
+    {
+      const style = map.getStyle();
+      const allLayers = style?.layers ?? [];
+      for (const layer of allLayers) {
+        const id = layer.id;
+        // admin-0 계열: 국경선
+        if (id.includes('admin-0') || id.includes('country-boundary')) {
+          try {
+            map.setLayoutProperty(id, 'visibility', countryCfg.enabled ? 'visible' : 'none');
+            if (countryCfg.enabled && layer.type === 'line') {
+              map.setPaintProperty(id, 'line-color', countryCfg.color);
+              map.setPaintProperty(id, 'line-width', ['interpolate', ['linear'], ['zoom'],
+                3, countryCfg.width * 0.6, 6, countryCfg.width, 10, countryCfg.width * 1.4,
+              ]);
+              map.setPaintProperty(id, 'line-opacity', 0.9);
+            }
+          } catch (_) {}
+        }
+      }
     }
 
-    // ── 주/도 경계 (state) — streets-v12 기존 레이어 + 한국 GeoJSON ──────
-    for (const id of ['admin-1-boundary', 'admin-1-boundary-bg']) {
-      if (!map.getLayer(id)) continue;
-      try {
-        map.setLayoutProperty(id, 'visibility', stateCfg.enabled ? 'visible' : 'none');
-        map.setPaintProperty(id, 'line-color', stateCfg.color);
-        map.setPaintProperty(id, 'line-width', ['interpolate', ['linear'], ['zoom'],
-          4, stateCfg.width * 0.5, 7, stateCfg.width, 11, stateCfg.width * 1.6,
-        ]);
-      } catch (_) {}
+    // ── 주/도 경계 (state) — Mapbox 스타일 내 모든 admin-1 레이어 제어 ──
+    {
+      const style = map.getStyle();
+      const allLayers = style?.layers ?? [];
+      for (const layer of allLayers) {
+        const id = layer.id;
+        if (id.includes('admin-1')) {
+          try {
+            // admin-1-boundary-bg: 흰색 글로우 배경선 → 항상 숨김 (GeoJSON선과 어긋남 방지)
+            if (id.includes('bg')) {
+              map.setLayoutProperty(id, 'visibility', 'none');
+              continue;
+            }
+            map.setLayoutProperty(id, 'visibility', stateCfg.enabled ? 'visible' : 'none');
+            if (stateCfg.enabled && layer.type === 'line') {
+              map.setPaintProperty(id, 'line-color', stateCfg.color);
+              map.setPaintProperty(id, 'line-width', ['interpolate', ['linear'], ['zoom'],
+                4, stateCfg.width * 0.5, 7, stateCfg.width, 11, stateCfg.width * 1.6,
+              ]);
+            }
+          } catch (_) {}
+        }
+      }
     }
 
     // 한국 sido GeoJSON
