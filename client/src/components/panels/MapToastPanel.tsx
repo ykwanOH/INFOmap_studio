@@ -164,6 +164,28 @@ function applySchemeToMini(
       }
     } catch (_) {}
   }
+
+  // 대지-수계 경계 0.5px 아웃라인 — 항상 표시 (안티앨리어싱 마스킹)
+  const LAND_OUTLINE_ID = 'mini-land-outline';
+  try {
+    if (!map.getSource('mini-land-src')) {
+      // land fill 레이어와 같은 소스(composite) 사용
+      map.addLayer({
+        id: LAND_OUTLINE_ID,
+        type: 'line',
+        source: 'composite',
+        'source-layer': 'water',
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: {
+          'line-color': cfg.land,   // 대지색으로 수계 경계를 덮음
+          'line-width': 0.5,
+          'line-opacity': 1,
+        },
+      });
+    } else {
+      map.setPaintProperty(LAND_OUTLINE_ID, 'line-color', cfg.land);
+    }
+  } catch (_) {}
 }
 
 export function MapToastPanel() {
@@ -255,10 +277,10 @@ export function MapToastPanel() {
           off.width = 384; off.height = 384;
           const ctx = off.getContext('2d')!;
           ctx.drawImage(mini.getCanvas(), 0, 0, 384, 384);
-          // 캡처 결과물에만 2px 보더 (#F0F0F0) — 안티앨리어싱 마스킹
+          // 캡처 결과물에만 1px inset 보더 (#F0F0F0)
           ctx.strokeStyle = 'rgb(240,240,240)';
-          ctx.lineWidth = 4; // inset이므로 실제 노출은 2px
-          ctx.strokeRect(2, 2, 380, 380);
+          ctx.lineWidth = 2; // inset이므로 실제 노출은 1px
+          ctx.strokeRect(1, 1, 382, 382);
           const a = document.createElement('a');
           a.download = `map-toast_${mapToastScheme}_${Date.now()}.png`;
           a.href = off.toDataURL('image/png');
