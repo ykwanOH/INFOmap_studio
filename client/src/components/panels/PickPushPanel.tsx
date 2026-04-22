@@ -460,7 +460,7 @@ export function PickPushPanel() {
         <Toggle checked={hillshadeEnabled} onChange={setHillshadeEnabled} label="Hillshade" />
         {hillshadeEnabled && (
           <SliderControl
-            label="Sharpness"
+            label="Shade"
             value={hillshadeSharpness}
             min={0.1} max={1.0} step={0.05}
             onChange={setHillshadeSharpness}

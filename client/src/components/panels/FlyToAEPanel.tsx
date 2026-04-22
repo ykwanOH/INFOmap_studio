@@ -114,7 +114,7 @@ class ArcLayer implements mapboxgl.CustomLayerInterface {
   private vertCount = 0;
   coords: [number, number, number][] = [];
   color: [number, number, number] = [0.878, 0.361, 0.165];
-  lineWidth = 2.5;
+  lineWidth = 5.0;  // 기본 2.5의 2배
   visible = true;
   dashed = false;
 
@@ -176,10 +176,9 @@ class ArcLayer implements mapboxgl.CustomLayerInterface {
     gl.lineWidth(this.lineWidth);
 
     if (this.dashed) {
-      // 대시: 짝수 세그먼트만 그리기
-      for (let i = 0; i < this.vertCount - 1; i += 4) {
-        const cnt = Math.min(2, this.vertCount - i);
-        if (cnt >= 2) gl.drawArrays(gl.LINE_STRIP, i, cnt);
+      // 점선: 1점 그리기 + 1점 건너뛰기 → 8배 촘촘
+      for (let i = 0; i < this.vertCount - 1; i += 2) {
+        gl.drawArrays(gl.LINES, i, 2);
       }
     } else {
       gl.drawArrays(gl.LINE_STRIP, 0, this.vertCount);
