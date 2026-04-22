@@ -113,7 +113,7 @@ export default function MapView() {
     mapStyle, viewMode,
     borders, colors,
     showLabels, showRoads,
-    terrainExaggeration, hillshadeEnabled, elevationPreset, elevationColors, illuminationAngle,
+    terrainExaggeration, hillshadeEnabled, hillshadeSharpness, elevationPreset, elevationColors, illuminationAngle,
     isDrawingRoute, activeRouteColor, activeRouteWidth,
     draftPoints, draftDragPoint, addDraftPoint, undoLastDraftPoint, commitRoute,
     routes, selectRoute,
@@ -416,18 +416,26 @@ export default function MapView() {
         map.addSource('mapbox-dem', { type: 'raster-dem', url: 'mapbox://mapbox.mapbox-terrain-dem-v1', tileSize: 512 });
       }
       if (hillshadeEnabled) {
+        // 위성/벡터 모두 동작 — water 레이어 없을 수 있으니 안전하게 추가
+        const beforeLayer = map.getLayer('water') ? 'water' : undefined;
         if (!map.getLayer('hillshade-layer')) {
-          map.addLayer({ id: 'hillshade-layer', type: 'hillshade', source: 'mapbox-dem',
-            paint: { 'hillshade-exaggeration': 0.5, 'hillshade-shadow-color': '#473B24' } as any,
-          }, 'water');
+          map.addLayer({
+            id: 'hillshade-layer', type: 'hillshade', source: 'mapbox-dem',
+            paint: {
+              'hillshade-exaggeration': hillshadeSharpness,
+              'hillshade-shadow-color': '#473B24',
+              'hillshade-highlight-color': '#ffffff',
+            } as any,
+          }, beforeLayer);
         } else {
           map.setLayoutProperty('hillshade-layer', 'visibility', 'visible');
+          map.setPaintProperty('hillshade-layer', 'hillshade-exaggeration', hillshadeSharpness);
         }
       } else {
         if (map.getLayer('hillshade-layer')) map.setLayoutProperty('hillshade-layer', 'visibility', 'none');
       }
     } catch (e) {}
-  }, [hillshadeEnabled]);
+  }, [hillshadeEnabled, hillshadeSharpness]);
 
   // ── Catmull-Rom spline helper ───────────────────────────────────────────
   // pts: 앵커 포인트 배열, samples: 각 세그먼트 분할 수
@@ -628,7 +636,7 @@ export default function MapView() {
     }
   }, [draftPoints, draftDragPoint, activeRouteColor, activeRouteWidth, routes]);
 
-  // ── Fly route visualization ─────────────────────────────────────────────
+  // ── Fly route visualization — 끝점 circle만 (3D 포물선은 FlyToAEPanel CustomLayer) ──
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !styleLoadedRef.current) return;
@@ -638,31 +646,19 @@ export default function MapView() {
     if (flyRoute.from) {
       features.push({ type: 'Feature',
         geometry: { type: 'Point', coordinates: [flyRoute.from.lng, flyRoute.from.lat] },
-        properties: { name: flyRoute.from.name, pointType: 'from' },
+        properties: { pointType: 'from' },
       });
     }
     if (flyRoute.to) {
       features.push({ type: 'Feature',
         geometry: { type: 'Point', coordinates: [flyRoute.to.lng, flyRoute.to.lat] },
-        properties: { name: flyRoute.to.name, pointType: 'to' },
+        properties: { pointType: 'to' },
       });
     }
-    if (flyRoute.from && flyRoute.to && flyRoute.showLine) {
-      const coords = interpolateGreatCircle(
-        [flyRoute.from.lng, flyRoute.from.lat],
-        [flyRoute.to.lng, flyRoute.to.lat],
-        80
-      );
-      features.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: coords }, properties: {} });
-    }
     source.setData({ type: 'FeatureCollection', features });
-    if (map.getLayer('fly-route-line')) {
-      map.setPaintProperty('fly-route-line', 'line-dasharray', flyRoute.lineStyle === 'dashed' ? [3, 2] : [1, 0]);
-      map.setLayoutProperty('fly-route-line', 'visibility', flyRoute.showLine ? 'visible' : 'none');
-    }
-    if (map.getLayer('fly-route-points')) {
-      map.setLayoutProperty('fly-route-points', 'visibility', 'visible');
-    }
+    // fly-route-line은 CustomLayer가 대체 — 숨김 유지
+    if (map.getLayer('fly-route-line')) map.setLayoutProperty('fly-route-line', 'visibility', 'none');
+    if (map.getLayer('fly-route-points')) map.setLayoutProperty('fly-route-points', 'visibility', 'visible');
   }, [flyRoute]);
 
   // ── Picked features rendering ───────────────────────────────────────────

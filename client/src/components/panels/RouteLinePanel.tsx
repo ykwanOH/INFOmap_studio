@@ -119,7 +119,7 @@ export function RouteLinePanel() {
           onClick={handleDraw}
         >
           <Pen size={11} />
-          {isDrawingRoute ? `Drawing… (${draftPoints.length} pts)` : 'Draw Route'}
+          {isDrawingRoute ? 'Drawing…' : 'Draw Route'}
         </button>
         <ColorPicker color={color} onChange={setColor} />
       </div>

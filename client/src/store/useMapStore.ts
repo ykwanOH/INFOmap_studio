@@ -15,7 +15,7 @@ export type MapToastScheme = 'twotone' | 'beigegray' | 'bluegray';
 // state    : 주/도 경계 (Mapbox admin_1 + 한국 17개 광역)
 // district : 구/시 경계 (한국 sgg 레벨, 서울 25구 + 각 도 시군)
 export type BorderLevel = 'country' | 'state' | 'district';
-export type RouteIconType = 'plane' | 'ship' | 'missile' | 'custom';
+export type RouteIconType = 'plane' | 'missile' | 'custom';
 export type ExtraLookType = 'monotone' | 'vintage' | 'digital' | null;
 export type RouteCapStyle = 'none' | 'circle' | 'arrow';
 export type RouteLineStyle = 'solid' | 'dashed';
@@ -161,6 +161,8 @@ export interface MapStoreState {
   setTerrainExaggeration: (v: number) => void;
   hillshadeEnabled: boolean;
   setHillshadeEnabled: (v: boolean) => void;
+  hillshadeSharpness: number;       // 0.1 ~ 1.0 (높을수록 선명)
+  setHillshadeSharpness: (v: number) => void;
   elevationPreset: 'natural' | 'vivid' | 'arctic';
   setElevationPreset: (v: 'natural' | 'vivid' | 'arctic') => void;
   elevationColors: { shadow: string; highlight: string; accent: string };
@@ -391,6 +393,8 @@ export const useMapStore = create<MapStoreState>((set, get) => ({
   setTerrainExaggeration: (v) => set({ terrainExaggeration: v }),
   hillshadeEnabled: false,
   setHillshadeEnabled: (v) => set({ hillshadeEnabled: v }),
+  hillshadeSharpness: 0.5,
+  setHillshadeSharpness: (v) => set({ hillshadeSharpness: v }),
   elevationPreset: 'natural',
   setElevationPreset: (v) => set({ elevationPreset: v }),
   elevationColors: { shadow: '#c09050', highlight: '#d0d0d0', accent: '#4a8a4a' },

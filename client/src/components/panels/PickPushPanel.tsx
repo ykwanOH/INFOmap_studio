@@ -59,6 +59,7 @@ export function PickPushPanel() {
     extraLook,
     terrainExaggeration, setTerrainExaggeration,
     hillshadeEnabled, setHillshadeEnabled,
+    hillshadeSharpness, setHillshadeSharpness,
     elevationPreset, setElevationPreset,
     elevationColors, setElevationColors,
     illuminationAngle, setIlluminationAngle,
@@ -452,10 +453,22 @@ export function PickPushPanel() {
 
       <SliderControl label="Exaggeration" value={terrainExaggeration} min={1} max={5} step={0.1}
         onChange={setTerrainExaggeration} displayValue={`${terrainExaggeration.toFixed(1)}×`} />
-      <Toggle checked={hillshadeEnabled} onChange={setHillshadeEnabled} label="Hillshade" />
 
-      {/* Elevation Colors — 클릭하면 모달 오픈 */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+        <Toggle checked={hillshadeEnabled} onChange={setHillshadeEnabled} label="Hillshade" />
+        {hillshadeEnabled && (
+          <SliderControl
+            label="Sharpness"
+            value={hillshadeSharpness}
+            min={0.1} max={1.0} step={0.05}
+            onChange={setHillshadeSharpness}
+            displayValue={`${Math.round(hillshadeSharpness * 100)}%`}
+          />
+        )}
+      </div>
+
+      {/* Elevation Colors */}
+      <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: '4px' }}>
         <span style={{ ...labelStyle, fontSize: '11px' }}>Elevation Colors</span>
         <div style={{ display: 'flex', gap: '6px' }}>
           {ELEVATION_PRESETS.map((preset) => (
@@ -479,90 +492,79 @@ export function PickPushPanel() {
         <div style={{ display: 'flex', gap: '6px' }}>
           {ELEVATION_PRESETS.map((p) => (
             <span key={p.key} style={{ ...labelStyle, flex: 1, textAlign: 'center' as const, fontSize: '10px',
-              color: elevationPreset === p.key ? '#59787f' : 'var(--section-label-color)', fontWeight: elevationPreset === p.key ? 600 : 400 }}>
+              color: elevationPreset === p.key ? '#59787f' : 'var(--section-label-color)',
+              fontWeight: elevationPreset === p.key ? 600 : 400 }}>
               {p.label}
             </span>
           ))}
         </div>
+
+        {/* 모달 — 패널 왼쪽에 absolute */}
+        {elevationModalOpen && (
+          <>
+            <div style={{ position: 'fixed', inset: 0, zIndex: 9998 }}
+              onClick={() => setElevationModalOpen(false)} />
+            <div style={{
+              position: 'absolute',
+              right: '100%',
+              top: 0,
+              marginRight: 8,
+              zIndex: 9999,
+              background: 'var(--glass-bg)',
+              border: '1px solid var(--glass-border)',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.22)',
+              padding: '14px',
+              display: 'flex', flexDirection: 'column', gap: '10px',
+              minWidth: 200,
+            }}>
+              <span style={{ ...labelStyle, fontWeight: 600, fontSize: '11px',
+                letterSpacing: '0.06em', textTransform: 'uppercase' as const }}>
+                Elevation Colors
+              </span>
+
+              {([
+                { key: 'shadow'    as const, label: 'Shadow'    },
+                { key: 'highlight' as const, label: 'Highlight' },
+                { key: 'accent'    as const, label: 'Flatland'  },
+              ] as const).map(({ key, label }) => (
+                <div key={key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                  <span style={{ ...labelStyle, fontSize: '11px' }}>{label}</span>
+                  <input type="color"
+                    value={elevationColors[key]}
+                    onChange={(e) => setElevationColors({ ...elevationColors, [key]: e.target.value })}
+                    style={{ width: 32, height: 20, border: '1px solid var(--glass-border)',
+                      cursor: 'pointer', padding: 0, background: 'none' }}
+                  />
+                </div>
+              ))}
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ ...labelStyle, fontSize: '11px' }}>Light Direction</span>
+                  <span style={{ fontFamily: "'DM Mono', monospace", fontSize: '10px',
+                    color: 'var(--section-label-color)' }}>{illuminationAngle}°</span>
+                </div>
+                <input type="range" className="custom-slider"
+                  min={0} max={359} step={1} value={illuminationAngle}
+                  onChange={(e) => setIlluminationAngle(Number(e.target.value))}
+                  style={{ width: '100%' }}
+                />
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  {['N 0°', 'E 90°', 'S 180°', 'W 270°'].map((l) => (
+                    <span key={l} style={{ fontFamily: "'DM Mono', monospace", fontSize: '9px', opacity: 0.5 }}>{l}</span>
+                  ))}
+                </div>
+              </div>
+
+              <button className="action-btn primary"
+                style={{ width: '100%', justifyContent: 'center', display: 'flex' }}
+                onClick={() => setElevationModalOpen(false)}>
+                Done
+              </button>
+            </div>
+          </>
+        )}
       </div>
-
-      {/* Elevation 편집 모달 */}
-      {elevationModalOpen && (
-        <div style={{
-          position: 'fixed', inset: 0, zIndex: 9999,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: 'rgba(0,0,0,0.35)',
-        }} onClick={() => setElevationModalOpen(false)}>
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              background: 'var(--glass-bg)', border: '1px solid var(--glass-border)',
-              boxShadow: '0 8px 32px rgba(0,0,0,0.25)',
-              padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px',
-              minWidth: 220,
-            }}
-          >
-            <span style={{ ...labelStyle, fontWeight: 600, fontSize: '11px', letterSpacing: '0.06em', textTransform: 'uppercase' as const }}>
-              Elevation Colors
-            </span>
-
-            {/* Shadow color */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ ...labelStyle, fontSize: '11px' }}>Shadow</span>
-              <input type="color" value={elevationColors.shadow}
-                onChange={(e) => setElevationColors({ ...elevationColors, shadow: e.target.value })}
-                style={{ width: 32, height: 20, border: '1px solid var(--glass-border)', cursor: 'pointer', padding: 0, background: 'none' }}
-              />
-            </div>
-
-            {/* Highlight color */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ ...labelStyle, fontSize: '11px' }}>Highlight</span>
-              <input type="color" value={elevationColors.highlight}
-                onChange={(e) => setElevationColors({ ...elevationColors, highlight: e.target.value })}
-                style={{ width: 32, height: 20, border: '1px solid var(--glass-border)', cursor: 'pointer', padding: 0, background: 'none' }}
-              />
-            </div>
-
-            {/* Accent color */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ ...labelStyle, fontSize: '11px' }}>Accent</span>
-              <input type="color" value={elevationColors.accent}
-                onChange={(e) => setElevationColors({ ...elevationColors, accent: e.target.value })}
-                style={{ width: 32, height: 20, border: '1px solid var(--glass-border)', cursor: 'pointer', padding: 0, background: 'none' }}
-              />
-            </div>
-
-            {/* Light direction slider */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ ...labelStyle, fontSize: '11px' }}>Light Direction</span>
-                <span style={{ fontFamily: "'DM Mono', monospace", fontSize: '10px', color: 'var(--section-label-color)' }}>
-                  {illuminationAngle}°
-                </span>
-              </div>
-              <input type="range" className="custom-slider"
-                min={0} max={359} step={1} value={illuminationAngle}
-                onChange={(e) => setIlluminationAngle(Number(e.target.value))}
-                style={{ width: '100%' }}
-              />
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                {(['N 0°', 'E 90°', 'S 180°', 'W 270°'] as const).map((l) => (
-                  <span key={l} style={{ fontFamily: "'DM Mono', monospace", fontSize: '9px', opacity: 0.5 }}>{l}</span>
-                ))}
-              </div>
-            </div>
-
-            <button
-              className="action-btn primary"
-              style={{ width: '100%', justifyContent: 'center', display: 'flex' }}
-              onClick={() => setElevationModalOpen(false)}
-            >
-              Done
-            </button>
-          </div>
-        </div>
-      )}
 
     </SectionPanel>
   );

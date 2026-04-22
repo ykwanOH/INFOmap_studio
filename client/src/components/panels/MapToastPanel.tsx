@@ -87,7 +87,7 @@ function applySchemeToMini(
 ) {
   const cfg = SCHEME_CONFIGS[scheme];
   const bColor = borderColor || cfg.border;
-  const bWidth = borderWidth ?? 1.5;
+  const bWidth = borderWidth ?? 1.05;  // 기본 1.5의 70%
   const bWidthExpr: mapboxgl.Expression = ['interpolate', ['linear'], ['zoom'],
     3, bWidth * 0.6, 6, bWidth, 10, bWidth * 1.4,
   ];
@@ -253,7 +253,12 @@ export function MapToastPanel() {
         try {
           const off = document.createElement('canvas');
           off.width = 384; off.height = 384;
-          off.getContext('2d')?.drawImage(mini.getCanvas(), 0, 0, 384, 384);
+          const ctx = off.getContext('2d')!;
+          ctx.drawImage(mini.getCanvas(), 0, 0, 384, 384);
+          // 캡처 결과물에만 2px 보더 (#F0F0F0) — 안티앨리어싱 마스킹
+          ctx.strokeStyle = 'rgb(240,240,240)';
+          ctx.lineWidth = 4; // inset이므로 실제 노출은 2px
+          ctx.strokeRect(2, 2, 380, 380);
           const a = document.createElement('a');
           a.download = `map-toast_${mapToastScheme}_${Date.now()}.png`;
           a.href = off.toDataURL('image/png');

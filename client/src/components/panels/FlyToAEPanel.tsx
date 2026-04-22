@@ -1,12 +1,12 @@
 /**
- * MACRO Map Studio — Fly To AE Panel (v2)
- * - 아이콘: plane(포물선/거리비례), ship(평면), missile(고각)
- * - 라인: 3D 고도 LineString
- * - FLY: 자동 3D 전환 + 아이콘별 카메라 시퀀스
- * - to AE: 배경 캡처 + 3점 키프레임 JSX
+ * MACRO Map Studio — Fly To AE Panel (v3)
+ * - 3D 포물선: Mapbox CustomLayer (WebGL) — MercatorCoordinate 기반 실고도
+ * - 배(Ship) 제거
+ * - FLY 줌: 포물선 꼭지점이 화면에 들어오는 최소값 자동 계산
+ * - to AE: 3점 키프레임 JSX + 배경 PNG
  */
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import mapboxgl from 'mapbox-gl';
 import { useMapStore, type RouteIconType } from '@/store/useMapStore';
 import { SectionPanel, Toggle } from '@/components/ui/SectionPanel';
@@ -21,7 +21,7 @@ const labelStyle = {
   whiteSpace: 'nowrap' as const,
 };
 
-// ── SVG 아이콘 정의 ───────────────────────────────────────────────────────────
+// ── SVG 아이콘 ────────────────────────────────────────────────────────────────
 const PLANE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <g transform="translate(32,32) rotate(-45) translate(-32,-32)">
     <path d="M32 6 L40 28 H58 L44 36 L48 58 L32 46 L16 58 L20 36 L6 28 H24 Z"
@@ -30,26 +30,15 @@ const PLANE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   </g>
 </svg>`;
 
-const SHIP_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <path d="M10 40 Q32 28 54 40 L50 52 Q32 58 14 52 Z"
-    fill="white" stroke="#2a2a2a" stroke-width="2" stroke-linejoin="round"/>
-  <rect x="29" y="20" width="5" height="20" fill="white" stroke="#2a2a2a" stroke-width="1.5"/>
-  <path d="M34 20 L50 30 L34 32 Z" fill="#eee" stroke="#2a2a2a" stroke-width="1.2"/>
-  <path d="M29 20 L14 30 L29 32 Z" fill="#eee" stroke="#2a2a2a" stroke-width="1.2"/>
-  <rect x="24" y="38" width="16" height="6" rx="2" fill="#ccc" stroke="#2a2a2a" stroke-width="1"/>
-</svg>`;
-
 const MISSILE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <g transform="translate(32,32) rotate(-60) translate(-32,-32)">
     <ellipse cx="32" cy="28" rx="7" ry="18" fill="white" stroke="#2a2a2a" stroke-width="2"/>
     <path d="M32 8 L25 18 L39 18 Z" fill="#e05c2a" stroke="#2a2a2a" stroke-width="1.5"/>
     <path d="M25 40 L14 54 L32 46 Z" fill="#999" stroke="#2a2a2a" stroke-width="1.2"/>
     <path d="M39 40 L50 54 L32 46 Z" fill="#999" stroke="#2a2a2a" stroke-width="1.2"/>
-    <rect x="28" y="22" width="8" height="12" rx="2" fill="#ddd"/>
   </g>
 </svg>`;
 
-// ── SVG → Canvas 래스터라이즈 ─────────────────────────────────────────────────
 function svgToCanvas(svgStr: string, size = 56): Promise<HTMLCanvasElement> {
   return new Promise((resolve) => {
     const img = new Image();
@@ -58,9 +47,7 @@ function svgToCanvas(svgStr: string, size = 56): Promise<HTMLCanvasElement> {
     img.onload = () => {
       const c = document.createElement('canvas');
       c.width = size; c.height = size;
-      const ctx = c.getContext('2d')!;
-      ctx.clearRect(0, 0, size, size);
-      ctx.drawImage(img, 0, 0, size, size);
+      c.getContext('2d')!.drawImage(img, 0, 0, size, size);
       URL.revokeObjectURL(url);
       resolve(c);
     };
@@ -69,7 +56,7 @@ function svgToCanvas(svgStr: string, size = 56): Promise<HTMLCanvasElement> {
   });
 }
 
-// ── Haversine 거리 (km) ───────────────────────────────────────────────────────
+// ── 거리 (km) ─────────────────────────────────────────────────────────────────
 function haversineKm(a: [number, number], b: [number, number]): number {
   const R = 6371;
   const dLat = (b[1] - a[1]) * Math.PI / 180;
@@ -79,7 +66,6 @@ function haversineKm(a: [number, number], b: [number, number]): number {
   return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s));
 }
 
-// ── bearing 계산 ──────────────────────────────────────────────────────────────
 function calcBearing(from: [number, number], to: [number, number]): number {
   const dLng = (to[0] - from[0]) * Math.PI / 180;
   const lat1 = from[1] * Math.PI / 180;
@@ -89,7 +75,7 @@ function calcBearing(from: [number, number], to: [number, number]): number {
   return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
 }
 
-// ── 3D 포물선 좌표 ────────────────────────────────────────────────────────────
+// ── 3D 포물선 좌표 (고도 m) ───────────────────────────────────────────────────
 function build3DArc(
   from: [number, number],
   to: [number, number],
@@ -100,10 +86,9 @@ function build3DArc(
   let maxAltM: number;
   if (iconType === 'missile') {
     maxAltM = Math.max(1_500_000, distKm * 1500);
-  } else if (iconType === 'plane' || iconType === 'custom') {
-    maxAltM = Math.max(60_000, distKm * 900);
   } else {
-    maxAltM = 0; // ship: 평면
+    // plane / custom
+    maxAltM = Math.max(60_000, distKm * 900);
   }
   const coords: [number, number, number][] = [];
   for (let i = 0; i <= steps; i++) {
@@ -116,11 +101,108 @@ function build3DArc(
   return coords;
 }
 
-// ── 아이콘 맵 등록 ────────────────────────────────────────────────────────────
+// ── WebGL CustomLayer — 3D 포물선 라인 ──────────────────────────────────────
+// Mercator 좌표로 변환 후 gl.LINES로 렌더
+class ArcLayer implements mapboxgl.CustomLayerInterface {
+  id = 'fly-arc-3d';
+  type = 'custom' as const;
+  renderingMode = '3d' as const;
+
+  private gl!: WebGLRenderingContext;
+  private program!: WebGLProgram;
+  private buf!: WebGLBuffer;
+  private vertCount = 0;
+  coords: [number, number, number][] = [];
+  color: [number, number, number] = [0.878, 0.361, 0.165];
+  lineWidth = 2.5;
+  visible = true;
+  dashed = false;
+
+  onAdd(_map: mapboxgl.Map, gl: WebGLRenderingContext) {
+    this.gl = gl;
+    const vs = gl.createShader(gl.VERTEX_SHADER)!;
+    gl.shaderSource(vs, `
+      uniform mat4 u_matrix;
+      attribute vec3 a_pos;
+      void main() { gl_Position = u_matrix * vec4(a_pos, 1.0); }
+    `);
+    gl.compileShader(vs);
+
+    const fs = gl.createShader(gl.FRAGMENT_SHADER)!;
+    gl.shaderSource(fs, `
+      precision mediump float;
+      uniform vec3 u_color;
+      void main() { gl_FragColor = vec4(u_color, 0.92); }
+    `);
+    gl.compileShader(fs);
+
+    const prog = gl.createProgram()!;
+    gl.attachShader(prog, vs);
+    gl.attachShader(prog, fs);
+    gl.linkProgram(prog);
+    this.program = prog;
+    this.buf = gl.createBuffer()!;
+    this.updateGeometry();
+  }
+
+  updateGeometry() {
+    if (!this.gl || this.coords.length < 2) return;
+    const gl = this.gl;
+    const verts: number[] = [];
+    for (const [lng, lat, alt] of this.coords) {
+      const mc = mapboxgl.MercatorCoordinate.fromLngLat({ lng, lat }, alt);
+      verts.push(mc.x, mc.y, mc.z!);
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verts), gl.DYNAMIC_DRAW);
+    this.vertCount = this.coords.length;
+  }
+
+  render(gl: WebGLRenderingContext, matrix: number[]) {
+    if (!this.visible || this.vertCount < 2) return;
+    gl.useProgram(this.program);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.buf);
+
+    const matLoc = gl.getUniformLocation(this.program, 'u_matrix');
+    gl.uniformMatrix4fv(matLoc, false, matrix);
+
+    const colLoc = gl.getUniformLocation(this.program, 'u_color');
+    gl.uniform3fv(colLoc, this.color);
+
+    const posLoc = gl.getAttribLocation(this.program, 'a_pos');
+    gl.enableVertexAttribArray(posLoc);
+    gl.vertexAttribPointer(posLoc, 3, gl.FLOAT, false, 0, 0);
+
+    gl.lineWidth(this.lineWidth);
+
+    if (this.dashed) {
+      // 대시: 짝수 세그먼트만 그리기
+      for (let i = 0; i < this.vertCount - 1; i += 4) {
+        const cnt = Math.min(2, this.vertCount - i);
+        if (cnt >= 2) gl.drawArrays(gl.LINE_STRIP, i, cnt);
+      }
+    } else {
+      gl.drawArrays(gl.LINE_STRIP, 0, this.vertCount);
+    }
+  }
+}
+
+// 싱글톤 레이어 인스턴스
+let arcLayerInstance: ArcLayer | null = null;
+
+function getOrCreateArcLayer(map: mapboxgl.Map): ArcLayer {
+  if (!arcLayerInstance || !map.getLayer('fly-arc-3d')) {
+    if (arcLayerInstance && map.getLayer('fly-arc-3d')) map.removeLayer('fly-arc-3d');
+    arcLayerInstance = new ArcLayer();
+    map.addLayer(arcLayerInstance);
+  }
+  return arcLayerInstance;
+}
+
+// ── 아이콘 등록 ───────────────────────────────────────────────────────────────
 async function registerIcon(map: mapboxgl.Map, iconType: RouteIconType, customUrl?: string | null) {
   const size = 56;
   let canvas: HTMLCanvasElement;
-
   if (iconType === 'custom' && customUrl) {
     canvas = await new Promise((res) => {
       const img = new Image();
@@ -135,16 +217,32 @@ async function registerIcon(map: mapboxgl.Map, iconType: RouteIconType, customUr
       img.src = customUrl;
     });
   } else {
-    const svg = iconType === 'ship' ? SHIP_SVG : iconType === 'missile' ? MISSILE_SVG : PLANE_SVG;
-    canvas = await svgToCanvas(svg, size);
+    canvas = await svgToCanvas(iconType === 'missile' ? MISSILE_SVG : PLANE_SVG, size);
   }
-
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
-  const imageData = ctx.getImageData(0, 0, size, size);
   const id = 'fly-icon';
   if (map.hasImage(id)) map.removeImage(id);
-  map.addImage(id, { width: size, height: size, data: new Uint8Array(imageData.data) });
+  map.addImage(id, { width: size, height: size, data: new Uint8Array(ctx.getImageData(0, 0, size, size).data) });
+}
+
+// ── 꼭지점이 보이는 최소 줌 계산 ─────────────────────────────────────────────
+// 고도(m) → 화면에서 보이려면 지도가 얼마나 빠져야 하는지 역산
+function peakZoomFromAlt(altM: number, map: mapboxgl.Map, midLng: number, midLat: number): number {
+  // Mapbox 줌 레벨 z에서 1타일 = 256px, 지구 반지름 = 6371km
+  // 고도 altM가 화면 높이의 절반보다 작아야 보임
+  // 근사: altM / (Earth circumference / 2^z * tileSize / 360) < 0.5 * viewHeight
+  const containerH = map.getContainer().clientHeight || 900;
+  const earthCircumM = 2 * Math.PI * 6371000;
+  // 픽셀당 미터 = earthCircumM * cos(lat) / (tileSize * 2^z)
+  // 화면에 고도가 들어오려면: altM / metersPerPixel < containerH * 0.45
+  // → metersPerPixel > altM / (containerH * 0.45)
+  // → earthCircumM * cos(lat) / (256 * 2^z) > altM / (containerH * 0.45)
+  // → 2^z < earthCircumM * cos(lat) * containerH * 0.45 / (256 * altM)
+  const cosLat = Math.cos(midLat * Math.PI / 180);
+  const maxTiles = (earthCircumM * cosLat * containerH * 0.45) / (256 * altM);
+  const z = Math.log2(maxTiles);
+  return Math.max(1.5, Math.min(6, z));
 }
 
 export function FlyToAEPanel() {
@@ -189,36 +287,35 @@ export function FlyToAEPanel() {
     if (pt) { setFlyRouteTo(pt); setToSearch(''); }
   };
 
-  // ── 3D 라인 + 아이콘 맵 업데이트 ────────────────────────────────────────
+  // ── 3D 라인 업데이트 ──────────────────────────────────────────────────────
   const refresh3D = useCallback(async (map: mapboxgl.Map) => {
     if (!flyRoute.from || !flyRoute.to) return;
     const from: [number, number] = [flyRoute.from.lng, flyRoute.from.lat];
     const to: [number, number] = [flyRoute.to.lng, flyRoute.to.lat];
-    const coords3d = build3DArc(from, to, flyRoute.iconType);
 
-    const ptFeatures: GeoJSON.Feature[] = [
-      { type: 'Feature', geometry: { type: 'Point', coordinates: from }, properties: { role: 'from' } },
-      { type: 'Feature', geometry: { type: 'Point', coordinates: to }, properties: { role: 'to' } },
-    ];
-    const lineFeature: GeoJSON.Feature = {
-      type: 'Feature',
-      geometry: { type: 'LineString', coordinates: coords3d },
-      properties: {},
-    };
-    const source = map.getSource('fly-route') as mapboxgl.GeoJSONSource | undefined;
-    if (source) {
-      source.setData({
+    // CustomLayer 포물선
+    const coords3d = build3DArc(from, to, flyRoute.iconType);
+    const arc = getOrCreateArcLayer(map);
+    arc.coords = coords3d;
+    arc.visible = flyRoute.showLine;
+    arc.dashed = flyRoute.lineStyle === 'dashed';
+    arc.updateGeometry();
+    map.triggerRepaint();
+
+    // 끝점 circle 소스
+    const ptSource = map.getSource('fly-route') as mapboxgl.GeoJSONSource | undefined;
+    if (ptSource) {
+      ptSource.setData({
         type: 'FeatureCollection',
-        features: flyRoute.showLine ? [lineFeature, ...ptFeatures] : ptFeatures,
+        features: [
+          { type: 'Feature', geometry: { type: 'Point', coordinates: from }, properties: { role: 'from' } },
+          { type: 'Feature', geometry: { type: 'Point', coordinates: to }, properties: { role: 'to' } },
+        ],
       });
     }
-    if (map.getLayer('fly-route-line')) {
-      map.setLayoutProperty('fly-route-line', 'visibility', flyRoute.showLine ? 'visible' : 'none');
-      map.setPaintProperty('fly-route-line', 'line-dasharray',
-        flyRoute.lineStyle === 'dashed' ? [1.2, 2.0] : [1]);
-    }
+    if (map.getLayer('fly-route-line')) map.setLayoutProperty('fly-route-line', 'visibility', 'none');
 
-    // 아이콘 — 정점에 표시
+    // 아이콘
     if (flyRoute.showIcon) {
       await registerIcon(map, flyRoute.iconType, flyRoute.customIconUrl);
       const midIdx = Math.floor(coords3d.length / 2);
@@ -235,11 +332,17 @@ export function FlyToAEPanel() {
     }
   }, [flyRoute]);
 
-  // ── FLY 버튼 ─────────────────────────────────────────────────────────────
+  // flyRoute 변경 시 자동 refresh
+  useEffect(() => {
+    if (mapInstance && flyRoute.from && flyRoute.to) {
+      refresh3D(mapInstance);
+    }
+  }, [flyRoute, mapInstance, refresh3D]);
+
+  // ── FLY ───────────────────────────────────────────────────────────────────
   const handleFly = useCallback(async () => {
     if (!mapInstance || !flyRoute.from || !flyRoute.to || isAnimating) return;
 
-    // 1) 3D 자동 전환
     setViewMode('3d');
     mapInstance.easeTo({ pitch: 50, duration: 500 });
 
@@ -250,29 +353,15 @@ export function FlyToAEPanel() {
 
     let maxAltM: number;
     if (flyRoute.iconType === 'missile') maxAltM = Math.max(1_500_000, distKm * 1500);
-    else if (flyRoute.iconType === 'plane' || flyRoute.iconType === 'custom') maxAltM = Math.max(60_000, distKm * 900);
-    else maxAltM = 0;
+    else maxAltM = Math.max(60_000, distKm * 900);
 
-    // 줌 계산: 고도가 높을수록 더 빠짐
-    const peakZoom = Math.max(1.5, 7 - Math.log2(maxAltM / 80_000 + 1) * 1.2);
+    // 꼭지점이 보이는 최소 줌
+    const peakZoom = peakZoomFromAlt(maxAltM, mapInstance, mid[0], mid[1]);
 
     setIsAnimating(true);
     await refresh3D(mapInstance);
 
-    if (flyRoute.iconType === 'ship') {
-      // 출발(줌7) → 전체 경로 맞추기 (최소줌 2.7)
-      mapInstance.flyTo({ center: from, zoom: 7, pitch: 50, duration: 1000 });
-      setTimeout(() => {
-        const bounds = new mapboxgl.LngLatBounds(
-          [Math.min(from[0], to[0]) - 2, Math.min(from[1], to[1]) - 2],
-          [Math.max(from[0], to[0]) + 2, Math.max(from[1], to[1]) + 2]
-        );
-        mapInstance.fitBounds(bounds, { pitch: 50, padding: 80, duration: 2200, maxZoom: 7, minZoom: 2.7 });
-        setTimeout(() => setIsAnimating(false), 2400);
-      }, 1100);
-
-    } else if (flyRoute.iconType === 'missile') {
-      // 출발(줌7) → 정점 → 도착 방향 +1줌
+    if (flyRoute.iconType === 'missile') {
       const arrivalBearing = calcBearing(mid, to);
       mapInstance.flyTo({ center: from, zoom: 7, pitch: 50, duration: 900 });
       setTimeout(() => {
@@ -282,9 +371,8 @@ export function FlyToAEPanel() {
           setTimeout(() => setIsAnimating(false), 1500);
         }, 1900);
       }, 1000);
-
     } else {
-      // plane / custom: 출발(줌7) → 정점 → 도착(줌7)
+      // plane / custom
       mapInstance.flyTo({ center: from, zoom: 7, pitch: 50, duration: 900 });
       setTimeout(() => {
         mapInstance.flyTo({ center: mid, zoom: peakZoom, pitch: 50, duration: 1800 });
@@ -299,31 +387,26 @@ export function FlyToAEPanel() {
   // ── to AE ─────────────────────────────────────────────────────────────────
   const handleExportToAE = useCallback(async () => {
     if (!mapInstance || !flyRoute.from || !flyRoute.to) return;
-    setExportStatus('3D 뷰 전환 중...');
+    setExportStatus('3D 전환 중...');
 
     const { from: fr, to: tr, lineStyle, iconType } = flyRoute;
     const fromPt: [number, number] = [fr.lng, fr.lat];
     const toPt: [number, number] = [tr.lng, tr.lat];
     const distKm = haversineKm(fromPt, toPt);
 
-    // 3D 전환 + 전체 경로 뷰
     setViewMode('3d');
     mapInstance.easeTo({ pitch: 50, duration: 400 });
+
     const bounds = new mapboxgl.LngLatBounds(
       [Math.min(fr.lng, tr.lng) - 4, Math.min(fr.lat, tr.lat) - 4],
       [Math.max(fr.lng, tr.lng) + 4, Math.max(fr.lat, tr.lat) + 4]
     );
     mapInstance.fitBounds(bounds, { pitch: 50, padding: 80, duration: 1000 });
     await new Promise(r => setTimeout(r, 1400));
-    await new Promise<void>(r => {
-      mapInstance.once('idle', r);
-      mapInstance.triggerRepaint();
-      setTimeout(r, 2500);
-    });
+    await new Promise<void>(r => { mapInstance.once('idle', r); mapInstance.triggerRepaint(); setTimeout(r, 2500); });
 
-    setExportStatus('지도 캡처 중...');
+    setExportStatus('캡처 중...');
 
-    // 픽셀 좌표 계산
     const fromPx = mapInstance.project([fr.lng, fr.lat]);
     const toPx   = mapInstance.project([tr.lng, tr.lat]);
     const midLng = (fr.lng + tr.lng) / 2;
@@ -331,143 +414,77 @@ export function FlyToAEPanel() {
     const midPx  = mapInstance.project([midLng, midLat]);
 
     const canvas = mapInstance.getCanvas();
-    const cW = canvas.width;
-    const cH = canvas.height;
-
-    // 배경 캡처
+    const cW = canvas.width, cH = canvas.height;
     const bgDataUrl = canvas.toDataURL('image/png');
 
-    let maxAltM: number;
-    if (iconType === 'missile') maxAltM = Math.max(1_500_000, distKm * 1500);
-    else if (iconType === 'plane' || iconType === 'custom') maxAltM = Math.max(60_000, distKm * 900);
-    else maxAltM = 0;
-
-    // AE Z 변환 (고도 m → AE Z px: 1000km ≈ -600px)
+    let maxAltM = iconType === 'missile' ? Math.max(1_500_000, distKm * 1500) : Math.max(60_000, distKm * 900);
     const peakZ = -(maxAltM / 1_000_000) * 600;
     const totalDuration = Math.max(4, Math.min(14, distKm / 400));
     const now = new Date().toISOString();
 
     const jsx = `// ================================================================
-// MACRO Map Studio — Fly To AE Script  v2
+// INFO map Studio — Fly To AE Script  v3
 // Generated : ${now}
-// From      : ${fr.name}
-// To        : ${tr.name}
-// Distance  : ${distKm.toFixed(0)} km  |  Icon: ${iconType}  |  Line: ${lineStyle}
-// Duration  : ${totalDuration.toFixed(1)}s
-// Map capture size: ${cW} x ${cH} px
+// From : ${fr.name}   To : ${tr.name}
+// Distance : ${distKm.toFixed(0)} km  |  Icon: ${iconType}  |  Line: ${lineStyle}
+// Duration : ${totalDuration.toFixed(1)}s  |  Map: ${cW}x${cH}px
 // ================================================================
-
 (function macroMapFlyTo() {
   var comp = app.project.activeItem;
   if (!comp || !(comp instanceof CompItem)) {
-    alert("열려 있는 Composition이 없습니다.\\nComposition을 먼저 열거나 새로 만드세요.");
+    alert("열려 있는 Composition이 없습니다.");
     return;
   }
+  app.beginUndoGroup("INFO Map FlyTo");
+  var compW = comp.width, compH = comp.height;
+  var dur = ${totalDuration.toFixed(2)};
+  var sx = compW / ${cW}, sy = compH / ${cH};
+  var fromPx = [${fromPx.x.toFixed(1)}*sx, ${fromPx.y.toFixed(1)}*sy];
+  var midPx  = [${midPx.x.toFixed(1)}*sx,  ${midPx.y.toFixed(1)}*sy];
+  var toPx   = [${toPx.x.toFixed(1)}*sx,   ${toPx.y.toFixed(1)}*sy];
+  var zClose = -compH * 0.85;
+  var zPeak  = ${peakZ.toFixed(0)} * (compH / ${cH});
+  ${iconType === 'missile' ? 'var zArrive = zPeak + compH * 0.45;' : 'var zArrive = zClose;'}
 
-  app.beginUndoGroup("MACRO Map FlyTo");
-
-  var compW = comp.width;
-  var compH = comp.height;
-  var fps   = comp.frameRate;
-  var dur   = ${totalDuration.toFixed(2)};
-
-  // 캡처 이미지 → 컴프 픽셀 스케일
-  var sx = compW / ${cW};
-  var sy = compH / ${cH};
-
-  // 3개 키프레임 좌표
-  var fromPx = [${fromPx.x.toFixed(1)} * sx, ${fromPx.y.toFixed(1)} * sy];
-  var midPx  = [${midPx.x.toFixed(1)}  * sx, ${midPx.y.toFixed(1)}  * sy];
-  var toPx   = [${toPx.x.toFixed(1)}   * sx, ${toPx.y.toFixed(1)}   * sy];
-
-  // Z 깊이 (카메라 거리)
-  var zClose = -compH * 0.85;        // 클로즈업 거리
-  var zPeak  = ${peakZ.toFixed(0)} * (compH / ${cH}); // 포물선 정점
-  ${iconType === 'missile'
-    ? `var zArrive = zPeak + compH * 0.45; // 미사일: 도착에서 반만 당김`
-    : `var zArrive = zClose;               // plane/ship: 도착도 클로즈업`}
-
-  // ── 카메라 ──────────────────────────────────────────────────────
-  var cam = comp.layers.addCamera("MACRO Fly Camera", [compW / 2, compH / 2]);
-  cam.inPoint  = 0;
-  cam.outPoint = dur;
-
+  var cam = comp.layers.addCamera("INFO Map Fly Camera", [compW/2, compH/2]);
+  cam.inPoint = 0; cam.outPoint = dur;
   var camPos = cam.property("Transform").property("Position");
   var camPOI = cam.property("Transform").property("Point of Interest");
-
-  camPos.setValueAtTime(0,         [fromPx[0], fromPx[1], zClose]);
-  camPos.setValueAtTime(dur * 0.5, [midPx[0],  midPx[1],  zPeak]);
-  camPos.setValueAtTime(dur,       [toPx[0],   toPx[1],   zArrive]);
-
-  camPOI.setValueAtTime(0,         [fromPx[0], fromPx[1], 0]);
-  camPOI.setValueAtTime(dur * 0.5, [midPx[0],  midPx[1],  0]);
-  camPOI.setValueAtTime(dur,       [toPx[0],   toPx[1],   0]);
-
-  // 이즈 인/아웃
-  var easeIn  = [new KeyframeEase(0, 60)];
-  var easeOut = [new KeyframeEase(0, 60)];
-  for (var ki = 1; ki <= camPos.numKeys; ki++) {
-    camPos.setTemporalEaseAtKey(ki, easeIn, easeOut);
-    camPOI.setTemporalEaseAtKey(ki, easeIn, easeOut);
+  camPos.setValueAtTime(0,        [fromPx[0], fromPx[1], zClose]);
+  camPos.setValueAtTime(dur*0.5,  [midPx[0],  midPx[1],  zPeak]);
+  camPos.setValueAtTime(dur,      [toPx[0],   toPx[1],   zArrive]);
+  camPOI.setValueAtTime(0,        [fromPx[0], fromPx[1], 0]);
+  camPOI.setValueAtTime(dur*0.5,  [midPx[0],  midPx[1],  0]);
+  camPOI.setValueAtTime(dur,      [toPx[0],   toPx[1],   0]);
+  var ease = [new KeyframeEase(0, 60)];
+  for (var ki=1; ki<=camPos.numKeys; ki++) {
+    camPos.setTemporalEaseAtKey(ki, ease, ease);
+    camPOI.setTemporalEaseAtKey(ki, ease, ease);
   }
 
-  // ── 경로 Null (참조용) ───────────────────────────────────────────
-  var pathNull = comp.layers.addNull();
-  pathNull.name = "Route Path Null";
-  pathNull.enabled = false;
-  pathNull.inPoint = 0; pathNull.outPoint = dur;
-  var nPos = pathNull.property("Transform").property("Position");
-  nPos.setValueAtTime(0,         [fromPx[0], fromPx[1]]);
-  nPos.setValueAtTime(dur * 0.5, [midPx[0],  midPx[1]]);
-  nPos.setValueAtTime(dur,       [toPx[0],   toPx[1]]);
-
-  // ── 아이콘 레이어 ───────────────────────────────────────────────
-  var iconStr = "${iconType === 'plane' ? '✈' : iconType === 'ship' ? '⛵' : iconType === 'missile' ? '🚀' : '●'}";
-  var iconLyr = comp.layers.addText(iconStr);
+  var iconLyr = comp.layers.addText("${iconType === 'plane' ? '✈' : iconType === 'missile' ? '🚀' : '●'}");
   iconLyr.name = "Icon (${iconType})";
   iconLyr.inPoint = 0; iconLyr.outPoint = dur;
   var iPos = iconLyr.property("Transform").property("Position");
-  iPos.setValueAtTime(0,         [fromPx[0], fromPx[1]]);
-  iPos.setValueAtTime(dur * 0.5, [midPx[0],  midPx[1]]);
-  iPos.setValueAtTime(dur,       [toPx[0],   toPx[1]]);
-  var td = iconLyr.property("Source Text").value;
-  td.fontSize = 44;
-  td.fillColor = [1, 1, 1];
-  td.justification = ParagraphJustification.CENTER_JUSTIFY;
-  iconLyr.property("Source Text").setValue(td);
+  iPos.setValueAtTime(0,        [fromPx[0], fromPx[1]]);
+  iPos.setValueAtTime(dur*0.5,  [midPx[0],  midPx[1]]);
+  iPos.setValueAtTime(dur,      [toPx[0],   toPx[1]]);
 
   app.endUndoGroup();
-
-  alert(
-    "MACRO Map Studio — Fly To AE 완료!\\n\\n" +
-    "생성 레이어:\\n" +
-    "  · MACRO Fly Camera  — Position + POI 키프레임 3개\\n" +
-    "  · Route Path Null   — 경로 참조용 (비활성)\\n" +
-    "  · Icon (${iconType})\\n\\n" +
-    "⚠ 배경 PNG(macro_map_AE_bg_*.png)를 프로젝트에 import 후\\n" +
-    "  최하단 레이어로 배치하세요.\\n\\n" +
-    "From : ${fr.name.replace(/"/g, "'")}\\n" +
-    "To   : ${tr.name.replace(/"/g, "'")}\\n" +
-    "거리 : ${distKm.toFixed(0)} km\\n" +
-    "Duration : " + dur + "s"
-  );
+  alert("INFO Map FlyTo 완료!\\n\\n배경 PNG를 최하단 레이어로 배치하세요.\\nFrom: ${fr.name.replace(/"/g, "'")}\\nTo: ${tr.name.replace(/"/g, "'")}\\n거리: ${distKm.toFixed(0)}km  Duration: "+dur+"s");
 })();`;
 
-    // JSX 다운로드
-    const jsxBlob = new Blob([jsx], { type: 'text/plain' });
     const jsxLink = Object.assign(document.createElement('a'), {
-      href: URL.createObjectURL(jsxBlob),
-      download: `macro_flyto_${Date.now()}.jsx`,
+      href: URL.createObjectURL(new Blob([jsx], { type: 'text/plain' })),
+      download: `info_flyto_${Date.now()}.jsx`,
     });
     jsxLink.click();
 
-    // 배경 PNG 다운로드
     await new Promise(r => setTimeout(r, 200));
-    const bgLink = Object.assign(document.createElement('a'), {
+    Object.assign(document.createElement('a'), {
       href: bgDataUrl,
-      download: `macro_map_AE_bg_${Date.now()}.png`,
-    });
-    bgLink.click();
+      download: `info_map_AE_bg_${Date.now()}.png`,
+    }).click();
 
     setExportStatus('✓ JSX + 배경 PNG 저장 완료');
     setTimeout(() => setExportStatus(null), 3000);
@@ -540,17 +557,14 @@ export function FlyToAEPanel() {
         )}
       </div>
 
-      {/* Icon toggle + type */}
+      {/* Icon */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
         <Toggle checked={flyRoute.showIcon} onChange={setFlyRouteShowIcon} label="Icon (지도 표시)" />
-
-        {/* 종류 선택 — 항상 노출 */}
         <div style={{ display: 'flex', gap: '4px' }}>
           {([
-            { key: 'plane'   as RouteIconType, label: 'Plane',   icon: '🛩' },
-            { key: 'ship'    as RouteIconType, label: 'Ship',    icon: '🚢' },
-            { key: 'missile' as RouteIconType, label: 'Missile', icon: '🚀' },
-          ]).map(({ key, label, icon }) => (
+            { key: 'plane'   as RouteIconType, icon: '🛩', label: 'Plane'   },
+            { key: 'missile' as RouteIconType, icon: '🚀', label: 'Missile' },
+          ]).map(({ key, icon, label }) => (
             <button key={key}
               className={`action-btn secondary ${flyRoute.iconType === key ? 'active' : ''}`}
               style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
@@ -565,7 +579,7 @@ export function FlyToAEPanel() {
             className={`action-btn secondary ${flyRoute.iconType === 'custom' ? 'active' : ''}`}
             style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
               gap: '1px', padding: '4px 2px' }}
-            onClick={() => fileInputRef.current?.click()} title="Custom image">
+            onClick={() => fileInputRef.current?.click()}>
             <Upload size={14} />
             <span style={{ fontSize: '8px', fontFamily: "'DM Sans',sans-serif",
               textTransform: 'uppercase', letterSpacing: '0.04em' }}>Custom</span>
@@ -573,10 +587,8 @@ export function FlyToAEPanel() {
           <input ref={fileInputRef} type="file" accept="image/*"
             style={{ display: 'none' }} onChange={handleCustomFile} />
         </div>
-
         <p style={{ ...labelStyle, fontSize: '10px', color: 'var(--muted-foreground)' }}>
           {flyRoute.iconType === 'plane'   && '포물선 · 거리비례 고도'}
-          {flyRoute.iconType === 'ship'    && '평면 · 고도 없음'}
           {flyRoute.iconType === 'missile' && '고각 포물선 · 항상 높음'}
           {flyRoute.iconType === 'custom'  && '비행기 경로 따름'}
         </p>
@@ -584,7 +596,6 @@ export function FlyToAEPanel() {
 
       <div style={{ height: 1, background: 'var(--glass-border)' }} />
 
-      {/* FLY + To AE */}
       <div style={{ display: 'flex', gap: '4px' }}>
         <button className="action-btn primary"
           style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
