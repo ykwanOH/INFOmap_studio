@@ -7,7 +7,7 @@
  * - Export: PNG (전체 or 선택만 투명배경) / SVG (선택만)
  */
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useMapStore, type PickDisplayMode, type PickUnitMode } from '@/store/useMapStore';
 import { SectionPanel, SliderControl, ColorPicker, Toggle } from '@/components/ui/SectionPanel';
 import { MousePointer2, RotateCcw, Trash2, X, Download } from 'lucide-react';
@@ -69,6 +69,8 @@ export function PickPushPanel() {
   const [isExporting, setIsExporting] = useState(false);
   const [exportResolution, setExportResolution] = useState<'fhd' | '4k'>('fhd');
   const [elevationModalOpen, setElevationModalOpen] = useState(false);
+  const [modalPos, setModalPos] = useState({ top: 0, right: 0 });
+  const elevationBtnRef = useRef<HTMLDivElement>(null);
 
   const pickUnit = borders.district.enabled ? '구 / 시군'
     : borders.state.enabled ? '주 / 도' : '국가';
@@ -468,7 +470,7 @@ export function PickPushPanel() {
       </div>
 
       {/* Elevation Colors */}
-      <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+      <div ref={elevationBtnRef} style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: '4px' }}>
         <span style={{ ...labelStyle, fontSize: '11px' }}>Elevation Colors</span>
         <div style={{ display: 'flex', gap: '6px' }}>
           {ELEVATION_PRESETS.map((preset) => (
@@ -478,6 +480,14 @@ export function PickPushPanel() {
               onClick={() => {
                 setElevationPreset(preset.key);
                 setElevationColors(preset.hillshade);
+                // fixed 좌표 계산
+                if (elevationBtnRef.current) {
+                  const rect = elevationBtnRef.current.getBoundingClientRect();
+                  setModalPos({
+                    top: rect.top,
+                    right: window.innerWidth - rect.left + 8,
+                  });
+                }
                 setElevationModalOpen(true);
               }}
               style={{
@@ -499,16 +509,15 @@ export function PickPushPanel() {
           ))}
         </div>
 
-        {/* 모달 — 패널 왼쪽에 absolute */}
+        {/* 모달 — fixed로 패널 왼쪽에 */}
         {elevationModalOpen && (
           <>
             <div style={{ position: 'fixed', inset: 0, zIndex: 9998 }}
               onClick={() => setElevationModalOpen(false)} />
             <div style={{
-              position: 'absolute',
-              right: '100%',
-              top: 0,
-              marginRight: 8,
+              position: 'fixed',
+              top: Math.min(modalPos.top, window.innerHeight - 340),
+              right: modalPos.right,
               zIndex: 9999,
               background: 'var(--glass-bg)',
               border: '1px solid var(--glass-border)',

@@ -1,50 +1,81 @@
 /**
- * MACRO Map Studio — MarkerLayer v2
- * - 마커 클릭 → 선택 (하이라이트)
- * - 선택 상태에서 Del / Backspace → 해당 마커 삭제
+ * MACRO Map Studio — MarkerLayer v3
+ * - 마커 클릭 → 선택 (하이라이트) — 재생성 없이 스타일만 변경
+ * - Del / Backspace → 선택 마커 삭제
+ * - 지도 빈 곳 클릭 → 선택 해제
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import mapboxgl from 'mapbox-gl';
 import { useMapStore } from '@/store/useMapStore';
 
 export function MarkerLayer() {
   const { mapInstance, markers } = useMapStore();
   const markerRefs = useRef<Map<string, mapboxgl.Marker>>(new Map());
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // ref로 관리 — state로 하면 마커 재생성 루프 발생
+  const selectedIdRef = useRef<string | null>(null);
 
-  // ── 마커 추가/제거 ──────────────────────────────────────────────────────
+  const applyStyle = (id: string, color: string, selected: boolean) => {
+    const marker = markerRefs.current.get(id);
+    if (!marker) return;
+    const el = marker.getElement();
+    el.style.border = `2.5px solid ${selected ? '#ffffff' : 'rgba(255,255,255,0.6)'}`;
+    el.style.boxShadow = selected
+      ? `0 0 0 2.5px ${color}, 0 2px 8px rgba(0,0,0,0.45)`
+      : '0 1px 4px rgba(0,0,0,0.3)';
+    el.style.transform = selected ? 'scale(1.3)' : 'scale(1)';
+    el.style.zIndex = selected ? '10' : '1';
+  };
+
+  // ── 마커 추가 / 제거 ───────────────────────────────────────────────────
   useEffect(() => {
     if (!mapInstance) return;
 
+    // 삭제된 마커 제거
     const currentIds = new Set(markers.map((m) => m.id));
     markerRefs.current.forEach((marker, id) => {
       if (!currentIds.has(id)) {
         marker.remove();
         markerRefs.current.delete(id);
+        if (selectedIdRef.current === id) selectedIdRef.current = null;
       }
     });
 
+    // 새 마커 추가
     markers.forEach((m) => {
       if (markerRefs.current.has(m.id)) return;
 
-      const isSelected = selectedId === m.id;
       const el = document.createElement('div');
-      el.dataset.markerId = m.id;
       el.style.cssText = `
-        width: 14px;
-        height: 14px;
+        width: 13px;
+        height: 13px;
         border-radius: 50%;
         background: ${m.color};
-        border: 2.5px solid ${isSelected ? '#ffffff' : 'rgba(255,255,255,0.7)'};
-        box-shadow: ${isSelected ? `0 0 0 2px ${m.color}, 0 2px 6px rgba(0,0,0,0.4)` : '0 1px 4px rgba(0,0,0,0.3)'};
+        border: 2.5px solid rgba(255,255,255,0.6);
+        box-shadow: 0 1px 4px rgba(0,0,0,0.3);
         cursor: pointer;
-        transition: box-shadow 0.15s, border-color 0.15s;
+        transition: transform 0.12s, box-shadow 0.12s;
+        position: relative;
       `;
 
       el.addEventListener('click', (e) => {
         e.stopPropagation();
-        setSelectedId((prev) => prev === m.id ? null : m.id);
+        const prev = selectedIdRef.current;
+
+        // 이전 선택 해제
+        if (prev && prev !== m.id) {
+          const prevMarker = markers.find(mk => mk.id === prev);
+          if (prevMarker) applyStyle(prev, prevMarker.color, false);
+        }
+
+        // 토글
+        if (prev === m.id) {
+          selectedIdRef.current = null;
+          applyStyle(m.id, m.color, false);
+        } else {
+          selectedIdRef.current = m.id;
+          applyStyle(m.id, m.color, true);
+        }
       });
 
       const popup = new mapboxgl.Popup({ offset: 12, closeButton: false })
@@ -57,50 +88,37 @@ export function MarkerLayer() {
 
       markerRefs.current.set(m.id, marker);
     });
-  }, [mapInstance, markers, selectedId]);
+  }, [mapInstance, markers]);
 
-  // ── 선택 상태 시각 업데이트 ────────────────────────────────────────────
-  useEffect(() => {
-    markers.forEach((m) => {
-      const marker = markerRefs.current.get(m.id);
-      if (!marker) return;
-      const el = marker.getElement();
-      const isSelected = selectedId === m.id;
-      el.style.border = `2.5px solid ${isSelected ? '#ffffff' : 'rgba(255,255,255,0.7)'}`;
-      el.style.boxShadow = isSelected
-        ? `0 0 0 2.5px ${m.color}, 0 2px 8px rgba(0,0,0,0.4)`
-        : '0 1px 4px rgba(0,0,0,0.3)';
-      el.style.transform = isSelected ? 'scale(1.25)' : 'scale(1)';
-    });
-  }, [selectedId, markers]);
-
-  // ── Del / Backspace 키 처리 ────────────────────────────────────────────
+  // ── Del / Backspace 삭제 ───────────────────────────────────────────────
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      if (!selectedId) return;
-      // input/textarea 포커스 중에는 무시
+      const id = selectedIdRef.current;
+      if (!id) return;
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
-        // 마커 DOM 제거
-        const marker = markerRefs.current.get(selectedId);
-        if (marker) { marker.remove(); markerRefs.current.delete(selectedId); }
-        // store에서 제거
-        useMapStore.setState((state) => ({
-          markers: state.markers.filter((m) => m.id !== selectedId),
-        }));
-        setSelectedId(null);
+        const marker = markerRefs.current.get(id);
+        if (marker) { marker.remove(); markerRefs.current.delete(id); }
+        useMapStore.setState((s) => ({ markers: s.markers.filter((m) => m.id !== id) }));
+        selectedIdRef.current = null;
       }
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [selectedId]);
+  }, []);
 
   // ── 지도 빈 곳 클릭 → 선택 해제 ──────────────────────────────────────
   useEffect(() => {
     if (!mapInstance) return;
-    const deselect = () => setSelectedId(null);
+    const deselect = () => {
+      const id = selectedIdRef.current;
+      if (!id) return;
+      const m = useMapStore.getState().markers.find((mk) => mk.id === id);
+      if (m) applyStyle(id, m.color, false);
+      selectedIdRef.current = null;
+    };
     mapInstance.on('click', deselect);
     return () => { mapInstance.off('click', deselect); };
   }, [mapInstance]);

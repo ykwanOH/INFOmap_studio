@@ -85,10 +85,10 @@ function build3DArc(
   const distKm = haversineKm(from, to);
   let maxAltM: number;
   if (iconType === 'missile') {
-    maxAltM = Math.max(1_500_000, distKm * 1500);
+    maxAltM = Math.max(500_000, distKm * 500);
   } else {
     // plane / custom
-    maxAltM = Math.max(60_000, distKm * 900);
+    maxAltM = Math.max(20_000, distKm * 300);
   }
   const coords: [number, number, number][] = [];
   for (let i = 0; i <= steps; i++) {
@@ -339,52 +339,53 @@ export function FlyToAEPanel() {
     }
   }, [flyRoute, mapInstance, refresh3D]);
 
-  // ── FLY ───────────────────────────────────────────────────────────────────
+  // ── FLY ─────────────────────────────────────────────────────────────────
   const handleFly = useCallback(async () => {
     if (!mapInstance || !flyRoute.from || !flyRoute.to || isAnimating) return;
 
+    // 3D 전환 (pitch만 — 위치/줌/베어링은 직전 그대로 유지)
     setViewMode('3d');
+    const currentZoom    = mapInstance.getZoom();
+    const currentBearing = mapInstance.getBearing();
     mapInstance.easeTo({ pitch: 50, duration: 500 });
 
     const from: [number, number] = [flyRoute.from.lng, flyRoute.from.lat];
-    const to: [number, number] = [flyRoute.to.lng, flyRoute.to.lat];
+    const to:   [number, number] = [flyRoute.to.lng,   flyRoute.to.lat];
     const distKm = haversineKm(from, to);
     const mid: [number, number] = [(from[0] + to[0]) / 2, (from[1] + to[1]) / 2];
 
     let maxAltM: number;
-    if (flyRoute.iconType === 'missile') maxAltM = Math.max(1_500_000, distKm * 1500);
-    else maxAltM = Math.max(60_000, distKm * 900);
+    if (flyRoute.iconType === 'missile') maxAltM = Math.max(500_000, distKm * 500);
+    else maxAltM = Math.max(20_000, distKm * 300);
 
-    // 꼭지점이 보이는 최소 줌
-    const peakZoom = peakZoomFromAlt(maxAltM, mapInstance, mid[0], mid[1]);
+    // 꼭지점이 보이는 최소 줌 — 현재보다 더 빠질 때만 조정
+    const peakZoom = Math.min(currentZoom, peakZoomFromAlt(maxAltM, mapInstance, mid[0], mid[1]));
 
     setIsAnimating(true);
     await refresh3D(mapInstance);
 
     if (flyRoute.iconType === 'missile') {
       const arrivalBearing = calcBearing(mid, to);
-      mapInstance.flyTo({ center: from, zoom: 7, pitch: 50, duration: 900 });
       setTimeout(() => {
-        mapInstance.flyTo({ center: mid, zoom: peakZoom, pitch: 50, duration: 1800 });
+        mapInstance.flyTo({ center: mid, zoom: peakZoom, pitch: 50, bearing: currentBearing, duration: 1600 });
         setTimeout(() => {
           mapInstance.flyTo({ center: to, zoom: peakZoom + 1, bearing: arrivalBearing, pitch: 50, duration: 1400 });
           setTimeout(() => setIsAnimating(false), 1500);
-        }, 1900);
-      }, 1000);
+        }, 1700);
+      }, 550);
     } else {
-      // plane / custom
-      mapInstance.flyTo({ center: from, zoom: 7, pitch: 50, duration: 900 });
+      // plane / custom: 정점 풀아웃 → 도착 (직전 줌 복귀)
       setTimeout(() => {
-        mapInstance.flyTo({ center: mid, zoom: peakZoom, pitch: 50, duration: 1800 });
+        mapInstance.flyTo({ center: mid, zoom: peakZoom, pitch: 50, bearing: currentBearing, duration: 1600 });
         setTimeout(() => {
-          mapInstance.flyTo({ center: to, zoom: 7, pitch: 50, duration: 1400 });
+          mapInstance.flyTo({ center: to, zoom: currentZoom, pitch: 50, bearing: currentBearing, duration: 1400 });
           setTimeout(() => setIsAnimating(false), 1500);
-        }, 1900);
-      }, 1000);
+        }, 1700);
+      }, 550);
     }
   }, [mapInstance, flyRoute, isAnimating, setViewMode, refresh3D]);
 
-  // ── to AE ─────────────────────────────────────────────────────────────────
+    // ── to AE ─────────────────────────────────────────────────────────────────
   const handleExportToAE = useCallback(async () => {
     if (!mapInstance || !flyRoute.from || !flyRoute.to) return;
     setExportStatus('3D 전환 중...');
@@ -417,7 +418,7 @@ export function FlyToAEPanel() {
     const cW = canvas.width, cH = canvas.height;
     const bgDataUrl = canvas.toDataURL('image/png');
 
-    let maxAltM = iconType === 'missile' ? Math.max(1_500_000, distKm * 1500) : Math.max(60_000, distKm * 900);
+    let maxAltM = iconType === 'missile' ? Math.max(500_000, distKm * 500) : Math.max(20_000, distKm * 300);
     const peakZ = -(maxAltM / 1_000_000) * 600;
     const totalDuration = Math.max(4, Math.min(14, distKm / 400));
     const now = new Date().toISOString();
