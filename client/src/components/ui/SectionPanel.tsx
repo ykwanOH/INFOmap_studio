@@ -18,9 +18,10 @@ interface SectionPanelProps {
   title: string;
   children: ReactNode;
   noPadding?: boolean;
+  keepMounted?: boolean; // DOM 유지하면서 숨김 (Mapbox 인스턴스 보존용)
 }
 
-export function SectionPanel({ sectionKey, title, children, noPadding }: SectionPanelProps) {
+export function SectionPanel({ sectionKey, title, children, noPadding, keepMounted }: SectionPanelProps) {
   const { sections, toggleSection } = useMapStore();
   const isOpen = sections[sectionKey] ?? false;
 
@@ -36,7 +37,14 @@ export function SectionPanel({ sectionKey, title, children, noPadding }: Section
           : <ChevronRight size={13} color="var(--section-label-color)" />
         }
       </button>
-      {isOpen && (
+      {keepMounted ? (
+        <div style={{
+          ...(noPadding ? {} : { padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: '7px' }),
+          ...(isOpen ? {} : { visibility: 'hidden', height: 0, overflow: 'hidden', padding: 0 }),
+        }}>
+          {children}
+        </div>
+      ) : isOpen && (
         <div style={noPadding ? {} : {
           padding: '8px 12px',
           display: 'flex',

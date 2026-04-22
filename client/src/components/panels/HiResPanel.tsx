@@ -52,15 +52,11 @@ export function HiResPanel() {
   const delta = hiResZoomDelta as 0 | 1 | 2;
   const mult  = MULT[delta];
 
-  // 세로 1080 기준, ×mult 적용
-  const BASE_H = 1080;
+  // 출력 크기: 현재 캔버스 × mult
   const getOutputSize = () => {
     const src = mapInstance?.getCanvas();
     if (!src) return { w: 0, h: 0 };
-    const aspect = src.width / src.height;
-    const outH = BASE_H * mult;
-    const outW = Math.round(outH * aspect);
-    return { w: outW, h: outH };
+    return { w: src.width * mult, h: src.height * mult };
   };
   const { w: outW, h: outH } = getOutputSize();
 
@@ -69,35 +65,36 @@ export function HiResPanel() {
     setHiResCapturing(true);
     setProgress('렌더링 중...');
 
-    // 현재 pixelRatio 저장
-    const originalRatio = (mapInstance as any).getPixelRatio?.() ?? window.devicePixelRatio ?? 1;
-
     try {
-      // 목표: 세로 BASE_H * mult 픽셀
-      // pixelRatio를 올려서 캔버스 자체를 고해상도로 렌더
-      const container = mapInstance.getContainer();
-      const cssH = container.clientHeight;
-      const targetRatio = (BASE_H * mult) / cssH;
-
-      (mapInstance as any).setPixelRatio(targetRatio);
-
-      // 렌더 완료까지 대기 (idle 이벤트)
+      // mapInstance.getCanvas() → 현재 렌더된 캔버스를 그대로 가져와
+      // 새 오프스크린 캔버스에 mult배 크기로 drawImage 업스케일
       await new Promise<void>((resolve) => {
         mapInstance.once('idle', () => resolve());
         mapInstance.triggerRepaint();
-        // 안전망: 3초 후 강제 resolve
-        setTimeout(resolve, 3000);
+        setTimeout(resolve, 2000); // 안전망
       });
 
       setProgress('저장 중...');
 
       const src = mapInstance.getCanvas();
-      src.toBlob(blob => {
+      const outW = src.width * mult;
+      const outH = src.height * mult;
+
+      const out = document.createElement('canvas');
+      out.width = outW;
+      out.height = outH;
+      const ctx = out.getContext('2d')!;
+      // imageSmoothingQuality high → 업스케일 시 선명도 유지
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(src, 0, 0, outW, outH);
+
+      out.toBlob(blob => {
         if (!blob) return;
         const url = URL.createObjectURL(blob);
         const a = Object.assign(document.createElement('a'), {
           href: url,
-          download: `macro_hires_${src.width}x${src.height}_${Date.now()}.png`,
+          download: `macro_hires_${outW}x${outH}_${Date.now()}.png`,
         });
         document.body.appendChild(a); a.click();
         document.body.removeChild(a);
@@ -110,9 +107,6 @@ export function HiResPanel() {
       setProgress(`오류: ${e.message}`);
       setTimeout(() => setProgress(null), 3000);
     } finally {
-      // pixelRatio 복원
-      (mapInstance as any).setPixelRatio(originalRatio);
-      mapInstance.triggerRepaint();
       setHiResCapturing(false);
     }
   }, [mapInstance, mult, hiResCapturing, setHiResCapturing]);
@@ -173,7 +167,7 @@ export function HiResPanel() {
 
       {/* 캡처 버튼 */}
       <button
-        className="action-btn"
+        className="action-btn primary"
         style={{
           width: '100%', display: 'flex', alignItems: 'center',
           justifyContent: 'center', gap: '5px', fontWeight: 600,

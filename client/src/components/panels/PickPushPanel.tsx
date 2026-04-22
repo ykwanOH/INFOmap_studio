@@ -270,7 +270,7 @@ export function PickPushPanel() {
       {/* Pick + Clear + Reset */}
       <div style={{ display: 'flex', gap: '4px' }}>
         <button
-          className={`action-btn ${pickMode ? 'active' : ''}`}
+          className={`action-btn primary ${pickMode ? 'active' : ''}`}
           style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
           onClick={() => setPickMode(!pickMode)}
         >
@@ -405,13 +405,13 @@ export function PickPushPanel() {
 
       {/* Export 버튼 */}
       <div style={{ display: 'flex', gap: '4px' }}>
-        <button className="action-btn"
+        <button className="action-btn primary"
           style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
           onClick={handleExportPNG} disabled={isExporting}>
           <Download size={11} />
           {isExporting ? 'Exporting...' : 'PNG'}
         </button>
-        <button className="action-btn"
+        <button className="action-btn primary"
           style={{
             flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px',
             opacity: (!selectionOnly || pickedFeatures.length === 0) ? 0.4 : 1,

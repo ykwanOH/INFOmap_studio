@@ -114,7 +114,7 @@ export function RouteLinePanel() {
       {/* Draw button + color */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
         <button
-          className={`action-btn ${isDrawingRoute ? 'active' : ''}`}
+          className={`action-btn primary ${isDrawingRoute ? 'active' : ''}`}
           style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
           onClick={handleDraw}
         >
@@ -233,7 +233,7 @@ export function RouteLinePanel() {
         </div>
         <div style={{ display: 'flex', gap: '4px' }}>
           <button
-            className="action-btn"
+            className="action-btn primary"
             style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
             onClick={handleMark}
             disabled={isSearching || !searchQuery.trim()}

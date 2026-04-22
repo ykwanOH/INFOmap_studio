@@ -113,7 +113,7 @@ export default function MapView() {
     mapStyle, viewMode,
     borders, colors,
     showLabels, showRoads,
-    terrainExaggeration, hillshadeEnabled,
+    terrainExaggeration, hillshadeEnabled, elevationPreset,
     isDrawingRoute, activeRouteColor, activeRouteWidth,
     draftPoints, draftDragPoint, addDraftPoint, undoLastDraftPoint, commitRoute,
     routes, selectRoute,
@@ -371,6 +371,57 @@ export default function MapView() {
     } catch (e) {}
   }, [terrainExaggeration]);
 
+  // ── Elevation color gradient (terrain > 1일 때만 활성) ─────────────────
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !styleLoadedRef.current) return;
+
+    const PRESETS: Record<string, string[]> = {
+      natural: ['#4a8a4a', '#8ab870', '#d8c870', '#c09050', '#a07050', '#d0d0d0'],
+      vivid:   ['#2060c0', '#40a060', '#e0c040', '#e06020', '#c02020', '#ffffff'],
+      arctic:  ['#7ab0d0', '#a8c8e0', '#d8e8f0', '#eef4f8', '#f8fbff', '#ffffff'],
+    };
+
+    const colors = PRESETS[elevationPreset] ?? PRESETS.natural;
+
+    // 고도 기준 (meter): sea level → low → mid → high → alpine → snow
+    const stops = [0, 200, 800, 2000, 3500, 5000];
+
+    try {
+      if (terrainExaggeration > 1.0) {
+        if (!map.getSource('mapbox-dem')) {
+          map.addSource('mapbox-dem', { type: 'raster-dem', url: 'mapbox://mapbox.mapbox-terrain-dem-v1', tileSize: 512, maxzoom: 14 });
+        }
+        // 기존 레이어 제거 후 재생성 (색상 프리셋 변경 시)
+        if (map.getLayer('elevation-color-layer')) {
+          map.removeLayer('elevation-color-layer');
+        }
+        // hillshade 타입으로는 색 표현 불가 → fill-extrusion 없이
+        // Mapbox GL에서 고도별 색상은 'hillshade' 레이어로 근사하거나
+        // custom StyleLayer로 구현. 여기서는 hillshade를 컬러로 오버레이.
+        // 가장 현실적인 방법: 기존 land fill 레이어에 elevation expression 적용은
+        // raster-dem 소스 직접 불가 → hillshade-shadow-color + highlight-color 조합
+        map.addLayer({
+          id: 'elevation-color-layer',
+          type: 'hillshade',
+          source: 'mapbox-dem',
+          paint: {
+            'hillshade-exaggeration': 0.65,
+            'hillshade-shadow-color': colors[2],      // 음영 → 중고도 색
+            'hillshade-highlight-color': colors[5],   // 하이라이트 → 고산 색
+            'hillshade-accent-color': colors[0],      // 저지대 강조색
+            'hillshade-illumination-direction': 315,
+          } as any,
+        }, 'water');
+        map.setLayoutProperty('elevation-color-layer', 'visibility', 'visible');
+      } else {
+        if (map.getLayer('elevation-color-layer')) {
+          map.setLayoutProperty('elevation-color-layer', 'visibility', 'none');
+        }
+      }
+    } catch (e) {}
+  }, [terrainExaggeration, elevationPreset]);
+
   // ── Hillshade ───────────────────────────────────────────────────────────
   useEffect(() => {
     const map = mapRef.current;
@@ -539,7 +590,7 @@ export default function MapView() {
         // 화면 픽셀 대신 km 기준: 1° ≈ 111km 참고, width px를 고정 km로 환산 불가
         // → 총 길이(km) / (width * 0.12) 개수로 결정 (경험값, 줌 무관하게 시각적 균등)
         const totalKm = totalLengthKm(coords);
-        const dotCount = Math.max(2, Math.round(totalKm / (activeRouteWidth * 0.12)));
+        const dotCount = Math.max(2, Math.round(totalKm / (activeRouteWidth * 0.45)));
         const dotPts = sampleEvenlyByCount(coords, dotCount);
         dotFeatures = dotPts.map((pt) => ({
           type: 'Feature',
@@ -611,7 +662,7 @@ export default function MapView() {
         if (route.lineStyle === 'dashed') {
           const dotCoords = catmullRomToGeojson(route.points, 256);
           const totalKm = totalLengthKm(dotCoords);
-          const dotCount = Math.max(2, Math.round(totalKm / (route.width * 0.12)));
+          const dotCount = Math.max(2, Math.round(totalKm / (route.width * 0.45)));
           const dotPts = sampleEvenlyByCount(dotCoords, dotCount);
           dotPts.forEach((pt, idx) => {
             features.push({
@@ -1200,9 +1251,10 @@ function initCustomLayers(map: mapboxgl.Map) {
       source: 'routes-committed',
       filter: ['==', ['geometry-type'], 'Point'],
       paint: {
-        'circle-radius': ['/', ['get', 'width'], 1.6],
+        'circle-radius': ['/', ['get', 'width'], 2.2],
         'circle-color': ['get', 'color'],
-        'circle-opacity': ['case', ['==', ['get', 'role'], 'dot'], 0.88, 0],
+        'circle-opacity': ['case', ['==', ['get', 'role'], 'dot'], 0.92, 0],
+        'circle-stroke-width': 0,
       },
     });
     // 시작점 항상 원형 (1.5배)

@@ -71,7 +71,10 @@
   --section-label-color: #5a5550;
   --section-header-bg: #f9f7f4;
   --toggle-off: #c8c3bc;
-  --toggle-on: #2a5c2e;
+  --toggle-on: #59787f;
+  --action-primary: #59787f;
+  --action-primary-hover: #4a676e;
+  --action-idle: #ad9680;
   --slider-track: #d8d3cc;
   --slider-thumb: #3a3530;
   --value-color: #3a3530;
@@ -279,7 +282,8 @@
     padding: 5px 8px;
     border: 1px solid var(--glass-border);
     background: transparent;
-    color: var(--section-label-color);
+    color: var(--action-idle);
+    border-color: rgba(173,150,128,0.45);
     border-radius: 0px;
     transition: all 0.12s;
     cursor: pointer;
@@ -287,13 +291,14 @@
     white-space: nowrap;
   }
   .action-btn:hover {
-    background: rgba(0,0,0,0.04);
-    color: var(--foreground);
+    background: rgba(89,120,127,0.08);
+    color: var(--action-primary);
+    border-color: var(--action-primary);
   }
   .action-btn.active {
-    background: var(--primary);
-    color: var(--primary-foreground);
-    border-color: var(--primary);
+    background: var(--action-primary);
+    color: #ffffff;
+    border-color: var(--action-primary);
   }
   .action-btn.danger {
     color: #b84040;
@@ -301,6 +306,22 @@
   }
   .action-btn.danger:hover {
     background: #fdf0f0;
+  }
+  /* 확실한 액션 버튼 — 항상 primary 컬러 */
+  .action-btn.primary {
+    color: #59787f;
+    border-color: rgba(89,120,127,0.55);
+    font-weight: 600;
+  }
+  .action-btn.primary:hover {
+    background: rgba(89,120,127,0.12);
+    color: #4a676e;
+    border-color: #59787f;
+  }
+  .action-btn.primary.active {
+    background: #59787f;
+    color: #ffffff;
+    border-color: #59787f;
   }
 
   /* ── View mode button (3D CAM / 2D CAM style from sibling) ── */

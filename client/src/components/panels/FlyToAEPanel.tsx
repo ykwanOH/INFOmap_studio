@@ -339,7 +339,7 @@ export function FlyToAEPanel() {
       {/* FLY + To AE buttons */}
       <div style={{ display: 'flex', gap: '4px' }}>
         <button
-          className="action-btn"
+          className="action-btn primary"
           style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
           onClick={handleFly}
           disabled={!flyRoute.from || !flyRoute.to || isAnimating}
@@ -348,7 +348,7 @@ export function FlyToAEPanel() {
           {isAnimating ? 'Flying...' : 'Fly'}
         </button>
         <button
-          className="action-btn"
+          className="action-btn primary"
           style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', fontWeight: 600 }}
           onClick={handleExportToAE}
           disabled={!flyRoute.from || !flyRoute.to}

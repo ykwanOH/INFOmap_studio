@@ -184,14 +184,8 @@ export function MapToastPanel() {
   const [syncing, setSyncing] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  // ── C안: 섹션 접으면 syncing 자동 해제 ──────────────────────────────────
-  const sections = useMapStore((s) => s.sections);
-  useEffect(() => {
-    if (!sections['mapToast'] && syncing) {
-      setSyncing(false);
-      setMapToastActive(false);
-    }
-  }, [sections, syncing, setMapToastActive]);
+  // 섹션이 닫혔다 열려도 syncing/miniMap 상태 유지 — 별도 처리 불필요
+  // (섹션 토글은 visibility CSS로만 처리되므로 ref들은 살아있음)
 
   // ── 미니맵 초기화 ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -276,7 +270,7 @@ export function MapToastPanel() {
   const cfg = SCHEME_CONFIGS[mapToastScheme];
 
   return (
-    <SectionPanel sectionKey="mapToast" title="Map Toast" noPadding>
+    <SectionPanel sectionKey="mapToast" title="Map Toast" noPadding keepMounted>
       <div style={{ padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
 
         {/* 미니맵 */}
