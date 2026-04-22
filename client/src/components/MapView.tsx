@@ -1261,14 +1261,39 @@ function initCustomLayers(map: mapboxgl.Map) {
   }
   if (!map.getSource('fly-route')) {
     map.addSource('fly-route', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-    map.addLayer({ id: 'fly-route-line', type: 'line', source: 'fly-route',
+    map.addLayer({
+      id: 'fly-route-line', type: 'line', source: 'fly-route',
       filter: ['==', ['geometry-type'], 'LineString'],
       layout: { 'line-join': 'round', 'line-cap': 'round' },
-      paint: { 'line-color': '#e05c2a', 'line-width': 2.5, 'line-dasharray': [1, 0] },
+      paint: {
+        'line-color': '#e05c2a',
+        'line-width': 2.5,
+        'line-dasharray': [1, 0],
+        'line-opacity': 0.9,
+      },
     });
-    map.addLayer({ id: 'fly-route-points', type: 'circle', source: 'fly-route',
+    map.addLayer({
+      id: 'fly-route-points', type: 'circle', source: 'fly-route',
       filter: ['==', ['geometry-type'], 'Point'],
-      paint: { 'circle-radius': 7, 'circle-color': '#e05c2a', 'circle-stroke-width': 2.5, 'circle-stroke-color': '#ffffff' },
+      paint: {
+        'circle-radius': 7,
+        'circle-color': '#e05c2a',
+        'circle-stroke-width': 2.5,
+        'circle-stroke-color': '#ffffff',
+      },
+    });
+  }
+  // fly 아이콘 소스 (패널에서 addImage 후 이 source에 point 추가)
+  if (!map.getSource('fly-icon-source')) {
+    map.addSource('fly-icon-source', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addLayer({
+      id: 'fly-icon-layer', type: 'symbol', source: 'fly-icon-source',
+      layout: {
+        'icon-image': 'fly-icon',
+        'icon-size': 0.7,
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true,
+      },
     });
   }
   // picked-extrude 소스: extrude 모드용 (base=0, height=floatHeight)
