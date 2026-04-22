@@ -163,6 +163,10 @@ export interface MapStoreState {
   setHillshadeEnabled: (v: boolean) => void;
   elevationPreset: 'natural' | 'vivid' | 'arctic';
   setElevationPreset: (v: 'natural' | 'vivid' | 'arctic') => void;
+  elevationColors: { shadow: string; highlight: string; accent: string };
+  setElevationColors: (c: { shadow: string; highlight: string; accent: string }) => void;
+  illuminationAngle: number;
+  setIlluminationAngle: (v: number) => void;
 
   // ── Export ──
   exportResolution: 'fhd' | '4k';
@@ -389,6 +393,10 @@ export const useMapStore = create<MapStoreState>((set, get) => ({
   setHillshadeEnabled: (v) => set({ hillshadeEnabled: v }),
   elevationPreset: 'natural',
   setElevationPreset: (v) => set({ elevationPreset: v }),
+  elevationColors: { shadow: '#c09050', highlight: '#d0d0d0', accent: '#4a8a4a' },
+  setElevationColors: (c) => set({ elevationColors: c }),
+  illuminationAngle: 315,
+  setIlluminationAngle: (v) => set({ illuminationAngle: v }),
 
   // ── Export ──
   exportResolution: 'fhd',

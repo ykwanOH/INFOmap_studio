@@ -242,7 +242,7 @@ export function FlyToAEPanel() {
             style={{ flex: 1, borderColor: flyFromPickMode ? 'var(--accent)' : undefined }}
           />
           <button
-            className={`action-btn ${flyFromPickMode ? 'active' : ''}`}
+            className={`action-btn primary ${flyFromPickMode ? 'active' : ''}`}
             style={{ display: 'flex', alignItems: 'center', gap: '3px', flexShrink: 0 }}
             onClick={handleSetFrom}
           >
@@ -271,7 +271,7 @@ export function FlyToAEPanel() {
             style={{ flex: 1, borderColor: flyToPickMode ? 'var(--accent)' : undefined }}
           />
           <button
-            className={`action-btn ${flyToPickMode ? 'active' : ''}`}
+            className={`action-btn primary ${flyToPickMode ? 'active' : ''}`}
             style={{ display: 'flex', alignItems: 'center', gap: '3px', flexShrink: 0 }}
             onClick={handleSetTo}
           >
@@ -301,7 +301,7 @@ export function FlyToAEPanel() {
             {(['solid', 'dashed'] as const).map((style) => (
               <button
                 key={style}
-                className={`action-btn ${flyRoute.lineStyle === style ? 'active' : ''}`}
+                className={`action-btn secondary ${flyRoute.lineStyle === style ? 'active' : ''}`}
                 style={{ fontSize: '10px', padding: '2px 7px' }}
                 onClick={() => setFlyRouteLineStyle(style)}
               >
@@ -324,7 +324,7 @@ export function FlyToAEPanel() {
             {ICON_OPTIONS.map(({ key, emoji, label }) => (
               <button
                 key={key}
-                className={`action-btn ${flyRoute.iconType === key ? 'active' : ''}`}
+                className={`action-btn secondary ${flyRoute.iconType === key ? 'active' : ''}`}
                 style={{ fontSize: '12px', padding: '2px 5px' }}
                 onClick={() => setFlyRouteIconType(key)}
                 title={label}

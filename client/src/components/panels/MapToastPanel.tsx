@@ -38,7 +38,7 @@ const SCHEME_CONFIGS: Record<MapToastScheme, SchemeConfig> = {
     labelKo: '투톤-그레이',
     land:         '#A0A0A0',
     water:        '#4D4C4C',
-    border:       '#FFFFFF',
+    border:       '#F5F5F5',
     pickSelected: '#FFFFFF',
   },
   // 베이지-그레이: 수계 #99aaab / 대지·녹지 #dbd4cf / 대지선택 #c6a25f / 보조1 #989474 / 보조2 #9b8874
@@ -46,7 +46,7 @@ const SCHEME_CONFIGS: Record<MapToastScheme, SchemeConfig> = {
     labelKo: '베이지-그레이',
     land:         '#DBD4CF',
     water:        '#99AAAB',
-    border:       '#FFFFFF',
+    border:       '#F5F5F5',
     pickSelected: '#C6A25F',
     altLand1:     '#989474',
     altLand2:     '#9B8874',
@@ -56,8 +56,7 @@ const SCHEME_CONFIGS: Record<MapToastScheme, SchemeConfig> = {
     labelKo: '블루-그레이',
     land:         '#A6ABCD',
     water:        '#282D4B',
-    border:       '#FFFFFF',
-    pickSelected: '#D1E6FF',
+    border:       '#F5F5F5',
     altLand1:     '#7A8FB5', // 블루그레이 계열 중간톤
     altLand2:     '#6B7FA8', // 블루그레이 계열 진한톤
   },
@@ -204,7 +203,7 @@ export function MapToastPanel() {
       miniLoadedRef.current = true;
       const store = useMapStore.getState();
       applySchemeToMini(mini, store.mapToastScheme, store.showRoads,
-        store.borderTouched ? store.borders.country.color : '#FFFFFF',
+        store.borderTouched ? store.borders.country.color : '#F5F5F5',
         store.borders.country.width);
       // 스킴 적용 완료 후 표시 — 기본 Mapbox 테마 노출 방지
       setMiniReady(true);
@@ -223,7 +222,7 @@ export function MapToastPanel() {
     if (!mini || !miniLoadedRef.current) return;
     const { borderTouched } = useMapStore.getState();
     applySchemeToMini(mini, mapToastScheme, showRoads,
-      borderTouched ? borders.country.color : '#FFFFFF',
+      borderTouched ? borders.country.color : '#F5F5F5',
       borders.country.width);
   }, [mapToastScheme, showRoads, borders]);
 
@@ -287,6 +286,11 @@ export function MapToastPanel() {
             position: 'absolute', inset: 0, width: '100%', height: '100%',
             filter: syncing ? 'none' : 'brightness(0.7)', transition: 'filter 0.3s',
             opacity: miniReady ? 1 : 0, transition: 'opacity 0.3s, filter 0.3s',
+          }} />
+          {/* 안티앨리어싱 가리는 1px inset 경계선 */}
+          <div style={{
+            position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 5,
+            boxShadow: 'inset 0 0 0 1px rgb(240,240,240)',
           }} />
 
           {!syncing && (

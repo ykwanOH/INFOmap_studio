@@ -74,7 +74,7 @@ export function ColorPanel() {
               ) : `P${i + 1}`}
             </button>
             <button
-              className="action-btn"
+              className="action-btn secondary"
               style={{ fontSize: '10px', padding: '3px 8px' }}
               onClick={() => savePreset(i)}
               title={`현재 컬러를 Preset ${i + 1}에 저장`}

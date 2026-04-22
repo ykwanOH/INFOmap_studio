@@ -140,14 +140,12 @@ export function RouteLinePanel() {
         <span style={labelStyle}>Line Style</span>
         <div style={{ display: 'flex', gap: '4px' }}>
           {(['solid', 'dashed'] as RouteLineStyle[]).map((s) => (
-            <button key={s} onClick={() => setStyle(s)} style={{
-              padding: '3px 8px',
-              fontFamily: "'DM Mono', monospace", fontSize: '10px',
-              border: `1.5px solid ${style === s ? 'var(--accent)' : 'var(--glass-border)'}`,
-              background: style === s ? 'var(--accent)' : 'transparent',
-              color: style === s ? 'white' : 'var(--section-label-color)',
-              cursor: 'pointer',
-            }}>
+            <button
+              key={s}
+              className={`action-btn secondary ${style === s ? 'active' : ''}`}
+              style={{ padding: '3px 8px', fontFamily: "'DM Mono', monospace", fontSize: '10px' }}
+              onClick={() => setStyle(s)}
+            >
               {s === 'solid' ? '———' : '- - -'}
             </button>
           ))}
@@ -159,15 +157,14 @@ export function RouteLinePanel() {
         <span style={labelStyle}>Endpoints</span>
         <div style={{ display: 'flex', gap: '4px' }}>
           {CAP_OPTIONS.map(({ key, label, icon }) => (
-            <button key={key} title={label} onClick={() => setCap(key)} style={{
-              width: 28, height: 24,
-              fontFamily: "'DM Mono', monospace", fontSize: '11px',
-              border: `1.5px solid ${cap === key ? 'var(--accent)' : 'var(--glass-border)'}`,
-              background: cap === key ? 'var(--accent)' : 'transparent',
-              color: cap === key ? 'white' : 'var(--section-label-color)',
-              cursor: 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
+            <button
+              key={key}
+              title={label}
+              className={`action-btn secondary ${cap === key ? 'active' : ''}`}
+              style={{ width: 28, height: 24, fontFamily: "'DM Mono', monospace", fontSize: '11px',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+              onClick={() => setCap(key)}
+            >
               {icon}
             </button>
           ))}

@@ -10,12 +10,25 @@
 import { useState } from 'react';
 import { useMapStore, type PickDisplayMode, type PickUnitMode } from '@/store/useMapStore';
 import { SectionPanel, SliderControl, ColorPicker, Toggle } from '@/components/ui/SectionPanel';
-import { MousePointer2, RotateCcw, Trash2, X, Download, Square, CheckSquare } from 'lucide-react';
+import { MousePointer2, RotateCcw, Trash2, X, Download } from 'lucide-react';
 
+// 프리셋별 hillshade 컬러 기본값 (shadow, highlight, accent)
 const ELEVATION_PRESETS = [
-  { key: 'natural' as const, label: 'Natural', colors: ['#4a8a4a', '#a8c870', '#e8d890', '#d0a870', '#b08060'] },
-  { key: 'vivid'   as const, label: 'Vivid',   colors: ['#2060c0', '#40a060', '#e0c040', '#e06020', '#c02020'] },
-  { key: 'arctic'  as const, label: 'Arctic',  colors: ['#c0d8f0', '#a0c0e0', '#e0e8f0', '#f0f4f8', '#ffffff'] },
+  {
+    key: 'natural' as const, label: 'Natural',
+    gradientColors: ['#4a8a4a', '#a8c870', '#e8d890', '#d0a870', '#b08060'],
+    hillshade: { shadow: '#c09050', highlight: '#d0d0d0', accent: '#4a8a4a' },
+  },
+  {
+    key: 'vivid' as const, label: 'Vivid',
+    gradientColors: ['#2060c0', '#40a060', '#e0c040', '#e06020', '#c02020'],
+    hillshade: { shadow: '#e06020', highlight: '#ffffff', accent: '#2060c0' },
+  },
+  {
+    key: 'arctic' as const, label: 'Arctic',
+    gradientColors: ['#c0d8f0', '#a0c0e0', '#e0e8f0', '#f0f4f8', '#ffffff'],
+    hillshade: { shadow: '#a0c0e0', highlight: '#ffffff', accent: '#c0d8f0' },
+  },
 ];
 
 const labelStyle = {
@@ -47,11 +60,14 @@ export function PickPushPanel() {
     terrainExaggeration, setTerrainExaggeration,
     hillshadeEnabled, setHillshadeEnabled,
     elevationPreset, setElevationPreset,
+    elevationColors, setElevationColors,
+    illuminationAngle, setIlluminationAngle,
   } = useMapStore();
 
   const [selectionOnly, setSelectionOnly] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [exportResolution, setExportResolution] = useState<'fhd' | '4k'>('fhd');
+  const [elevationModalOpen, setElevationModalOpen] = useState(false);
 
   const pickUnit = borders.district.enabled ? '구 / 시군'
     : borders.state.enabled ? '주 / 도' : '국가';
@@ -254,14 +270,12 @@ export function PickPushPanel() {
       {/* Pick 단위 선택 */}
       <div style={{ display: 'flex', gap: '4px' }}>
         {(['country', 'state'] as PickUnitMode[]).map((u) => (
-          <button key={u} onClick={() => setPickUnitMode(u)} style={{
-            flex: 1, padding: '4px 0', fontSize: '11px',
-            fontFamily: "'DM Sans', sans-serif",
-            border: `1.5px solid ${pickUnitMode === u ? 'var(--accent)' : 'var(--glass-border)'}`,
-            background: pickUnitMode === u ? 'var(--accent)' : 'transparent',
-            color: pickUnitMode === u ? 'white' : 'var(--section-label-color)',
-            cursor: 'pointer',
-          }}>
+          <button
+            key={u}
+            className={`action-btn secondary ${pickUnitMode === u ? 'active' : ''}`}
+            style={{ flex: 1, padding: '4px 0', fontSize: '11px' }}
+            onClick={() => setPickUnitMode(u)}
+          >
             {u === 'country' ? '🌍 국가' : '📍 주 · 구'}
           </button>
         ))}
@@ -298,14 +312,12 @@ export function PickPushPanel() {
         <span style={labelStyle}>Display</span>
         <div style={{ display: 'flex', gap: '4px' }}>
           {(['floating', 'extrude'] as PickDisplayMode[]).map((m) => (
-            <button key={m} onClick={() => setPickDisplayMode(m)} style={{
-              padding: '3px 10px', fontSize: '11px',
-              fontFamily: "'DM Sans', sans-serif",
-              border: `1.5px solid ${pickDisplayMode === m ? 'var(--accent)' : 'var(--glass-border)'}`,
-              background: pickDisplayMode === m ? 'var(--accent)' : 'transparent',
-              color: pickDisplayMode === m ? 'white' : 'var(--section-label-color)',
-              cursor: 'pointer', textTransform: 'capitalize',
-            }}>
+            <button
+              key={m}
+              className={`action-btn secondary ${pickDisplayMode === m ? 'active' : ''}`}
+              style={{ padding: '3px 10px', fontSize: '11px' }}
+              onClick={() => setPickDisplayMode(m)}
+            >
               {m === 'floating' ? 'Float' : 'Extrude'}
             </button>
           ))}
@@ -371,30 +383,33 @@ export function PickPushPanel() {
       <div style={{ display: 'flex', gap: '0px' }}>
         {(['fhd', '4k'] as const).map((r) => (
           <button key={r}
-            className={`view-btn ${exportResolution === r ? 'active' : ''}`}
-            style={{ borderRight: r === 'fhd' ? 'none' : undefined }}
+            className={`action-btn secondary ${exportResolution === r ? 'active' : ''}`}
+            style={{ flex: 1 }}
             onClick={() => setExportResolution(r)}>
             {r.toUpperCase()}
-            <span style={{ ...monoStyle, opacity: 0.7, marginLeft: '3px' }}>
+            <span style={{ ...monoStyle, opacity: 0.8, marginLeft: '3px', color: 'inherit' }}>
               {r === 'fhd' ? '1920×1080' : '3840×2160'}
             </span>
           </button>
         ))}
       </div>
 
-      {/* 선택만 체크박스 */}
-      <button
-        className={`action-btn ${selectionOnly ? 'active' : ''}`}
-        style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}
-        onClick={() => setSelectionOnly(!selectionOnly)}
-        disabled={pickedFeatures.length === 0}
-      >
-        {selectionOnly ? <CheckSquare size={11} /> : <Square size={11} />}
-        Selection Only
-        {selectionOnly && pickedFeatures.length > 0 && (
-          <span style={{ marginLeft: '4px', opacity: 0.7 }}>({pickedFeatures.length})</span>
-        )}
-      </button>
+      {/* 선택만 체크박스 — 일반 체크박스 스타일 */}
+      <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', userSelect: 'none' }}>
+        <input
+          type="checkbox"
+          checked={selectionOnly}
+          onChange={(e) => setSelectionOnly(e.target.checked)}
+          disabled={pickedFeatures.length === 0}
+          style={{ width: 12, height: 12, accentColor: '#59787f', cursor: 'pointer' }}
+        />
+        <span style={{ ...labelStyle, fontSize: '11px', opacity: pickedFeatures.length === 0 ? 0.4 : 1 }}>
+          Selection Only
+          {selectionOnly && pickedFeatures.length > 0 && (
+            <span style={{ marginLeft: '4px', opacity: 0.7 }}>({pickedFeatures.length})</span>
+          )}
+        </span>
+      </label>
 
       {selectionOnly && (
         <p style={{ ...labelStyle, fontSize: '10px', color: 'var(--muted-foreground)', lineHeight: 1.4 }}>
@@ -438,24 +453,116 @@ export function PickPushPanel() {
       <SliderControl label="Exaggeration" value={terrainExaggeration} min={1} max={5} step={0.1}
         onChange={setTerrainExaggeration} displayValue={`${terrainExaggeration.toFixed(1)}×`} />
       <Toggle checked={hillshadeEnabled} onChange={setHillshadeEnabled} label="Hillshade" />
+
+      {/* Elevation Colors — 클릭하면 모달 오픈 */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
         <span style={{ ...labelStyle, fontSize: '11px' }}>Elevation Colors</span>
         <div style={{ display: 'flex', gap: '6px' }}>
           {ELEVATION_PRESETS.map((preset) => (
-            <button key={preset.key} onClick={() => setElevationPreset(preset.key)} title={preset.label} style={{
-              flex: 1, height: 18,
-              border: `2px solid ${elevationPreset === preset.key ? 'var(--primary)' : 'var(--glass-border)'}`,
-              background: `linear-gradient(to right, ${preset.colors.join(', ')})`,
-              cursor: 'pointer', transition: 'border-color 0.12s', borderRadius: 0,
-            }} />
+            <button
+              key={preset.key}
+              title={`${preset.label} — 클릭하여 편집`}
+              onClick={() => {
+                setElevationPreset(preset.key);
+                setElevationColors(preset.hillshade);
+                setElevationModalOpen(true);
+              }}
+              style={{
+                flex: 1, height: 18,
+                border: `2px solid ${elevationPreset === preset.key ? '#59787f' : 'var(--glass-border)'}`,
+                background: `linear-gradient(to right, ${preset.gradientColors.join(', ')})`,
+                cursor: 'pointer', transition: 'border-color 0.12s', borderRadius: 0,
+              }}
+            />
           ))}
         </div>
         <div style={{ display: 'flex', gap: '6px' }}>
           {ELEVATION_PRESETS.map((p) => (
-            <span key={p.key} style={{ ...labelStyle, flex: 1, textAlign: 'center' as const, fontSize: '10px' }}>{p.label}</span>
+            <span key={p.key} style={{ ...labelStyle, flex: 1, textAlign: 'center' as const, fontSize: '10px',
+              color: elevationPreset === p.key ? '#59787f' : 'var(--section-label-color)', fontWeight: elevationPreset === p.key ? 600 : 400 }}>
+              {p.label}
+            </span>
           ))}
         </div>
       </div>
+
+      {/* Elevation 편집 모달 */}
+      {elevationModalOpen && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 9999,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: 'rgba(0,0,0,0.35)',
+        }} onClick={() => setElevationModalOpen(false)}>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'var(--glass-bg)', border: '1px solid var(--glass-border)',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.25)',
+              padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px',
+              minWidth: 220,
+            }}
+          >
+            <span style={{ ...labelStyle, fontWeight: 600, fontSize: '11px', letterSpacing: '0.06em', textTransform: 'uppercase' as const }}>
+              Elevation Colors
+            </span>
+
+            {/* Shadow color */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ ...labelStyle, fontSize: '11px' }}>Shadow</span>
+              <input type="color" value={elevationColors.shadow}
+                onChange={(e) => setElevationColors({ ...elevationColors, shadow: e.target.value })}
+                style={{ width: 32, height: 20, border: '1px solid var(--glass-border)', cursor: 'pointer', padding: 0, background: 'none' }}
+              />
+            </div>
+
+            {/* Highlight color */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ ...labelStyle, fontSize: '11px' }}>Highlight</span>
+              <input type="color" value={elevationColors.highlight}
+                onChange={(e) => setElevationColors({ ...elevationColors, highlight: e.target.value })}
+                style={{ width: 32, height: 20, border: '1px solid var(--glass-border)', cursor: 'pointer', padding: 0, background: 'none' }}
+              />
+            </div>
+
+            {/* Accent color */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ ...labelStyle, fontSize: '11px' }}>Accent</span>
+              <input type="color" value={elevationColors.accent}
+                onChange={(e) => setElevationColors({ ...elevationColors, accent: e.target.value })}
+                style={{ width: 32, height: 20, border: '1px solid var(--glass-border)', cursor: 'pointer', padding: 0, background: 'none' }}
+              />
+            </div>
+
+            {/* Light direction slider */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ ...labelStyle, fontSize: '11px' }}>Light Direction</span>
+                <span style={{ fontFamily: "'DM Mono', monospace", fontSize: '10px', color: 'var(--section-label-color)' }}>
+                  {illuminationAngle}°
+                </span>
+              </div>
+              <input type="range" className="custom-slider"
+                min={0} max={359} step={1} value={illuminationAngle}
+                onChange={(e) => setIlluminationAngle(Number(e.target.value))}
+                style={{ width: '100%' }}
+              />
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                {(['N 0°', 'E 90°', 'S 180°', 'W 270°'] as const).map((l) => (
+                  <span key={l} style={{ fontFamily: "'DM Mono', monospace", fontSize: '9px', opacity: 0.5 }}>{l}</span>
+                ))}
+              </div>
+            </div>
+
+            <button
+              className="action-btn primary"
+              style={{ width: '100%', justifyContent: 'center', display: 'flex' }}
+              onClick={() => setElevationModalOpen(false)}
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
 
     </SectionPanel>
   );

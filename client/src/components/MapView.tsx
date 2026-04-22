@@ -113,7 +113,7 @@ export default function MapView() {
     mapStyle, viewMode,
     borders, colors,
     showLabels, showRoads,
-    terrainExaggeration, hillshadeEnabled, elevationPreset,
+    terrainExaggeration, hillshadeEnabled, elevationPreset, elevationColors, illuminationAngle,
     isDrawingRoute, activeRouteColor, activeRouteWidth,
     draftPoints, draftDragPoint, addDraftPoint, undoLastDraftPoint, commitRoute,
     routes, selectRoute,
@@ -376,41 +376,26 @@ export default function MapView() {
     const map = mapRef.current;
     if (!map || !styleLoadedRef.current) return;
 
-    const PRESETS: Record<string, string[]> = {
-      natural: ['#4a8a4a', '#8ab870', '#d8c870', '#c09050', '#a07050', '#d0d0d0'],
-      vivid:   ['#2060c0', '#40a060', '#e0c040', '#e06020', '#c02020', '#ffffff'],
-      arctic:  ['#7ab0d0', '#a8c8e0', '#d8e8f0', '#eef4f8', '#f8fbff', '#ffffff'],
-    };
-
-    const colors = PRESETS[elevationPreset] ?? PRESETS.natural;
-
-    // 고도 기준 (meter): sea level → low → mid → high → alpine → snow
-    const stops = [0, 200, 800, 2000, 3500, 5000];
-
+    // 프리셋 선택 시 elevationColors를 preset 기본값으로 동기화는 패널에서 처리
+    // 여기서는 elevationColors (커스텀) + illuminationAngle을 직접 사용
     try {
       if (terrainExaggeration > 1.0) {
         if (!map.getSource('mapbox-dem')) {
           map.addSource('mapbox-dem', { type: 'raster-dem', url: 'mapbox://mapbox.mapbox-terrain-dem-v1', tileSize: 512, maxzoom: 14 });
         }
-        // 기존 레이어 제거 후 재생성 (색상 프리셋 변경 시)
         if (map.getLayer('elevation-color-layer')) {
           map.removeLayer('elevation-color-layer');
         }
-        // hillshade 타입으로는 색 표현 불가 → fill-extrusion 없이
-        // Mapbox GL에서 고도별 색상은 'hillshade' 레이어로 근사하거나
-        // custom StyleLayer로 구현. 여기서는 hillshade를 컬러로 오버레이.
-        // 가장 현실적인 방법: 기존 land fill 레이어에 elevation expression 적용은
-        // raster-dem 소스 직접 불가 → hillshade-shadow-color + highlight-color 조합
         map.addLayer({
           id: 'elevation-color-layer',
           type: 'hillshade',
           source: 'mapbox-dem',
           paint: {
             'hillshade-exaggeration': 0.65,
-            'hillshade-shadow-color': colors[2],      // 음영 → 중고도 색
-            'hillshade-highlight-color': colors[5],   // 하이라이트 → 고산 색
-            'hillshade-accent-color': colors[0],      // 저지대 강조색
-            'hillshade-illumination-direction': 315,
+            'hillshade-shadow-color': elevationColors.shadow,
+            'hillshade-highlight-color': elevationColors.highlight,
+            'hillshade-accent-color': elevationColors.accent,
+            'hillshade-illumination-direction': illuminationAngle,
           } as any,
         }, 'water');
         map.setLayoutProperty('elevation-color-layer', 'visibility', 'visible');
@@ -420,7 +405,7 @@ export default function MapView() {
         }
       }
     } catch (e) {}
-  }, [terrainExaggeration, elevationPreset]);
+  }, [terrainExaggeration, elevationColors, illuminationAngle]);
 
   // ── Hillshade ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -570,35 +555,16 @@ export default function MapView() {
     if (map.getLayer('route-draw-line')) {
       map.setPaintProperty('route-draw-line', 'line-color', activeRouteColor);
       map.setPaintProperty('route-draw-line', 'line-width', activeRouteWidth);
-      // 실선은 dasharray 없음, 점선은 도트 간격으로
-      if (!isDashed) {
-        map.setPaintProperty('route-draw-line', 'line-dasharray', [1]);
-      }
+      // dasharray: [dash, gap] — line-width 단위 비율, 줌 무관하게 일정한 패턴
+      map.setPaintProperty('route-draw-line', 'line-dasharray',
+        isDashed ? [1.2, 2.0] : [1]
+      );
     }
 
-    // 2) Draft dots source — Haversine 균등 샘플링
+    // 2) Draft dots source — dasharray 방식으로 전환, 비움
     const draftDotsSource = map.getSource('route-draw-dots') as mapboxgl.GeoJSONSource | undefined;
     if (draftDotsSource) {
-      const previewPts: Array<[number, number]> = draftDragPoint && draftPoints.length >= 1
-        ? [...draftPoints, draftDragPoint]
-        : draftPoints;
-      const coords = previewPts.length >= 2 ? catmullRomToGeojson(previewPts, 256) : previewPts;
-      const dotRadius = activeRouteWidth / 2;
-      let dotFeatures: GeoJSON.Feature[] = [];
-      if (isDashed && coords.length >= 2) {
-        // 총 길이 기준 도트 개수: 도트 지름 * 2.5 간격으로 몇 개 들어가는지
-        // 화면 픽셀 대신 km 기준: 1° ≈ 111km 참고, width px를 고정 km로 환산 불가
-        // → 총 길이(km) / (width * 0.12) 개수로 결정 (경험값, 줌 무관하게 시각적 균등)
-        const totalKm = totalLengthKm(coords);
-        const dotCount = Math.max(2, Math.round(totalKm / (activeRouteWidth * 0.45)));
-        const dotPts = sampleEvenlyByCount(coords, dotCount);
-        dotFeatures = dotPts.map((pt) => ({
-          type: 'Feature',
-          geometry: { type: 'Point', coordinates: pt },
-          properties: { color: activeRouteColor, radius: dotRadius },
-        }));
-      }
-      draftDotsSource.setData({ type: 'FeatureCollection', features: dotFeatures });
+      draftDotsSource.setData({ type: 'FeatureCollection', features: [] });
     }
 
     // 3) Draft start cap (시작점 항상 원형)
@@ -630,8 +596,7 @@ export default function MapView() {
             color: route.color,
             lineStyle: route.lineStyle,
             width: route.width,
-            // 점선은 투명(dot 레이어로 표현) — 히트영역은 width 유지
-            lineOpacity: route.lineStyle === 'dashed' ? 0 : 0.95,
+            lineOpacity: 0.95,
             selected: route.selected,
             capStyle: route.capStyle,
           },
@@ -648,7 +613,6 @@ export default function MapView() {
         // 종점 캡 — bearing 계산 포함
         if (route.capStyle !== 'none' && route.points.length >= 2) {
           const n = coords.length;
-          // 끝 방향: 마지막 몇 점 평균으로 안정화 (단일 점 noise 방지)
           const fromIdx = Math.max(0, n - Math.min(8, Math.floor(n * 0.05) + 2));
           const bearing = calcBearing(coords[fromIdx], coords[n - 1]);
           features.push({
@@ -658,21 +622,7 @@ export default function MapView() {
             properties: { id: route.id, color: route.color, capStyle: route.capStyle, role: 'end', width: route.width, bearing },
           });
         }
-        // 도트 — Haversine 균등 샘플링
-        if (route.lineStyle === 'dashed') {
-          const dotCoords = catmullRomToGeojson(route.points, 256);
-          const totalKm = totalLengthKm(dotCoords);
-          const dotCount = Math.max(2, Math.round(totalKm / (route.width * 0.45)));
-          const dotPts = sampleEvenlyByCount(dotCoords, dotCount);
-          dotPts.forEach((pt, idx) => {
-            features.push({
-              type: 'Feature',
-              id: `${route.id}-dot-${idx}`,
-              geometry: { type: 'Point', coordinates: pt },
-              properties: { id: route.id, color: route.color, role: 'dot', width: route.width },
-            });
-          });
-        }
+        // 점선은 dasharray 레이어가 처리 — 도트 포인트 불필요
       }
       committedSource.setData({ type: 'FeatureCollection', features });
     }
@@ -1231,20 +1181,24 @@ function initCustomLayers(map: mapboxgl.Map) {
         'line-blur': 2,
       },
     });
-    // 메인 라인 (실선 전용 — 점선은 dot 레이어로)
+    // 메인 라인 — solid/dashed 모두 line-dasharray로 처리 (줌 무관 일정 패턴)
     map.addLayer({
       id: 'routes-committed-line',
       type: 'line',
       source: 'routes-committed',
-      filter: ['all', ['==', ['geometry-type'], 'LineString'], ['!=', ['get', 'lineStyle'], 'dashed']],
+      filter: ['==', ['geometry-type'], 'LineString'],
       layout: { 'line-join': 'round', 'line-cap': 'round' },
       paint: {
         'line-color': ['get', 'color'],
         'line-width': ['get', 'width'],
         'line-opacity': ['coalesce', ['get', 'lineOpacity'], 0.95],
+        'line-dasharray': ['case',
+          ['==', ['get', 'lineStyle'], 'dashed'], ['literal', [1.2, 2.0]],
+          ['literal', [1]],
+        ],
       },
     });
-    // 점선: 도트 포인트 레이어
+    // 점선 dot 레이어는 dasharray로 대체됨 — 히트 영역용 투명 레이어만 유지
     map.addLayer({
       id: 'routes-committed-dots',
       type: 'circle',
@@ -1253,7 +1207,7 @@ function initCustomLayers(map: mapboxgl.Map) {
       paint: {
         'circle-radius': ['/', ['get', 'width'], 2.2],
         'circle-color': ['get', 'color'],
-        'circle-opacity': ['case', ['==', ['get', 'role'], 'dot'], 0.92, 0],
+        'circle-opacity': 0,  // 완전 투명 — 클릭 히트 영역만
         'circle-stroke-width': 0,
       },
     });
