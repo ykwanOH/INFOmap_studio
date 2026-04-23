@@ -1,7 +1,11 @@
 /**
- * MACRO Map Studio — Map Toast Panel
- * A. 2D/3D CAM 따름  B. 지명 항상 숨김  C. 국경 항상 표시
- * D. 도로 토글 따름  E/F. 컬러 스킴 3종  G/H/I. 스킴 컬러  J. 기본=투톤-그레이
+ * MACRO Map Studio — Map Toast Panel (v2 · Hi-Res Capture)
+ * 옵션 A 방식:
+ *   1. pixelRatio × mult(2 or 4)로 미니맵 캔버스 업스케일 렌더
+ *   2. 업스케일 캔버스 중앙에서 384×mult 정사각형 crop
+ *   3. 2px 보더 추가
+ *   4. 384×384로 다운샘플
+ *   5. pixelRatio 원복
  */
 
 import { useRef, useEffect, useCallback, useState } from 'react';
@@ -13,6 +17,10 @@ if (!mapboxgl.accessToken) {
   mapboxgl.accessToken = (import.meta.env.VITE_MAPBOX_TOKEN as string) || '';
 }
 
+const OUTPUT_SIZE = 384;
+const BORDER_PX   = 2;
+const BORDER_COLOR = 'rgb(200,200,200)';
+
 const labelStyle = {
   fontFamily: "'DM Sans', sans-serif",
   fontSize: '12px',
@@ -22,73 +30,51 @@ const labelStyle = {
   whiteSpace: 'nowrap' as const,
 };
 
+const monoStyle = {
+  fontFamily: "'DM Mono', monospace",
+  fontSize: '10px',
+  color: 'var(--section-label-color)',
+} as const;
+
 interface SchemeConfig {
   labelKo: string;
-  land: string;         // 대지·녹지 기본
-  water: string;        // 수계
-  border: string;       // 국경
-  pickSelected: string; // Pick&Push 선택 국가/주 표시색 (추후 활용)
-  altLand1?: string;    // 대지 보조1 (추후 활용)
-  altLand2?: string;    // 대지 보조2 (추후 활용)
+  land: string;
+  water: string;
+  border: string;
+  pickSelected: string;
+  altLand1?: string;
+  altLand2?: string;
 }
 
 const SCHEME_CONFIGS: Record<MapToastScheme, SchemeConfig> = {
-  // 투톤-그레이: 수계 #4d4c4c / 대지·녹지 #a0a0a0 / 대지선택 #ffffff
   twotone: {
     labelKo: '투톤-그레이',
-    land:         '#A0A0A0',
-    water:        '#4D4C4C',
-    border:       '#F5F5F5',
-    pickSelected: '#FFFFFF',
+    land: '#A0A0A0', water: '#4D4C4C', border: '#F5F5F5', pickSelected: '#FFFFFF',
   },
-  // 베이지-그레이: 수계 #99aaab / 대지·녹지 #dbd4cf / 대지선택 #c6a25f / 보조1 #989474 / 보조2 #9b8874
   beigegray: {
     labelKo: '베이지-그레이',
-    land:         '#DBD4CF',
-    water:        '#99AAAB',
-    border:       '#F5F5F5',
-    pickSelected: '#C6A25F',
-    altLand1:     '#989474',
-    altLand2:     '#9B8874',
+    land: '#DBD4CF', water: '#99AAAB', border: '#F5F5F5', pickSelected: '#C6A25F',
+    altLand1: '#989474', altLand2: '#9B8874',
   },
-  // 블루-그레이: 수계 #282d4b / 대지·녹지 #a6abcd / 대지선택 #d1e6ff / 보조1 #7a8fb5 / 보조2 #6b7fa8
   bluegray: {
     labelKo: '블루-그레이',
-    land:         '#A6ABCD',
-    water:        '#282D4B',
-    border:       '#F5F5F5',
-    altLand1:     '#7A8FB5', // 블루그레이 계열 중간톤
-    altLand2:     '#6B7FA8', // 블루그레이 계열 진한톤
+    land: '#A6ABCD', water: '#282D4B', border: '#F5F5F5',
+    pickSelected: '#d1e6ff', altLand1: '#7A8FB5', altLand2: '#6B7FA8',
   },
 };
 
 const SCHEME_ORDER: MapToastScheme[] = ['twotone', 'beigegray', 'bluegray'];
-
-// 허용할 레이어 패턴 — 이 외 모든 레이어는 숨김
-const ALLOWED_LAYER_TYPES = new Set(['background', 'fill', 'line']);
-const LAND_IDS  = [
-  'land', 'land-structure-polygon', 'landuse', 'landuse-residential',
-  'landcover', 'landcover-crop', 'landcover-grass', 'landcover-scrub',  // streets-v12 추가
-  'national-park', 'landuse-park',
-];
-const GREEN_IDS = ['landcover-wood', 'landcover-grass', 'national-park', 'landuse-park'];
-const WATER_IDS = ['water', 'water-shadow'];
 const BORDER_IDS = ['admin-0-boundary', 'admin-0-boundary-disputed'];
-
-// borders useEffect에서 추가하는 커스텀 국경 레이어
-const CUSTOM_BORDER_IDS = ['macro-admin-country', 'macro-admin-state', 'macro-korea-sido', 'macro-korea-sgg'];
 
 function applySchemeToMini(
   map: mapboxgl.Map,
   scheme: MapToastScheme,
   showRoads: boolean,
-  borderColor?: string,
   borderWidth?: number,
 ) {
   const cfg = SCHEME_CONFIGS[scheme];
-  // 미니맵 국경은 항상 rgb(220,220,220) — 가시성 최적
   const bColor = 'rgb(220,220,220)';
-  const bWidth = (borderWidth ?? 1.5) * 0.7;  // 메인 굵기의 70%
+  const bWidth = (borderWidth ?? 1.5) * 0.7;
   const bWidthExpr: mapboxgl.Expression = ['interpolate', ['linear'], ['zoom'],
     3, bWidth * 0.6, 6, bWidth, 10, bWidth * 1.4,
   ];
@@ -97,119 +83,64 @@ function applySchemeToMini(
   for (const layer of layers) {
     const { id, type } = layer;
     try {
-      // B. symbol 전체 숨김 (지명, POI, 도로번호 등)
-      if (type === 'symbol') {
-        map.setLayoutProperty(id, 'visibility', 'none');
-        continue;
-      }
-
-      // 배경 → 대지색
-      if (type === 'background') {
-        map.setPaintProperty(id, 'background-color', cfg.land);
-        continue;
-      }
-
-      // 수계 fill → 수계색
-      if (type === 'fill' && (id.includes('water') || WATER_IDS.includes(id))) {
-        map.setPaintProperty(id, 'fill-color', cfg.water);
-        continue;
-      }
-
-      // 수계 line
+      if (type === 'symbol') { map.setLayoutProperty(id, 'visibility', 'none'); continue; }
+      if (type === 'background') { map.setPaintProperty(id, 'background-color', cfg.land); continue; }
+      if (type === 'fill' && (id.includes('water'))) { map.setPaintProperty(id, 'fill-color', cfg.water); continue; }
       if (type === 'line' && (id === 'waterway' || id.includes('waterway'))) {
         map.setLayoutProperty(id, 'visibility', 'visible');
-        map.setPaintProperty(id, 'line-color', cfg.water);
-        continue;
+        map.setPaintProperty(id, 'line-color', cfg.water); continue;
       }
-
-      // 대지·녹지 fill → 대지색 (수계 제외한 모든 fill)
       if (type === 'fill' && !id.includes('water')) {
         map.setLayoutProperty(id, 'visibility', 'visible');
         map.setPaintProperty(id, 'fill-color', cfg.land);
-        map.setPaintProperty(id, 'fill-opacity', 1);
-        continue;
+        map.setPaintProperty(id, 'fill-opacity', 1); continue;
       }
-
-      // C. 국경 → 항상 표시, 스킴 국경색
       if (type === 'line' && BORDER_IDS.includes(id)) {
         map.setLayoutProperty(id, 'visibility', 'visible');
         map.setPaintProperty(id, 'line-color', bColor);
         map.setPaintProperty(id, 'line-width', bWidthExpr);
-        map.setPaintProperty(id, 'line-opacity', 0.9);
-        continue;
+        map.setPaintProperty(id, 'line-opacity', 0.9); continue;
       }
-
-      // 국경 이하 경계선 숨김
-      if (type === 'line' && (id.includes('admin-1') || id.includes('admin-2') ||
-          id.startsWith('macro-korea'))) {
-        map.setLayoutProperty(id, 'visibility', 'none');
-        continue;
+      if (type === 'line' && (id.includes('admin-1') || id.includes('admin-2') || id.startsWith('macro-korea'))) {
+        map.setLayoutProperty(id, 'visibility', 'none'); continue;
       }
-
-      // D. 도로 → 토글 따름
       if (type === 'line' && (id.startsWith('road-') || id.startsWith('bridge-') || id.startsWith('tunnel-'))) {
-        map.setLayoutProperty(id, 'visibility', showRoads ? 'visible' : 'none');
-        continue;
+        map.setLayoutProperty(id, 'visibility', showRoads ? 'visible' : 'none'); continue;
       }
-
-      // 나머지 line (fence, cliff 등) 숨김
-      if (type === 'line') {
-        map.setLayoutProperty(id, 'visibility', 'none');
-        continue;
-      }
-
-      // fill-extrusion (건물 등) 숨김
-      if (type === 'fill-extrusion') {
-        map.setLayoutProperty(id, 'visibility', 'none');
-        continue;
-      }
+      if (type === 'line') { map.setLayoutProperty(id, 'visibility', 'none'); continue; }
+      if (type === 'fill-extrusion') { map.setLayoutProperty(id, 'visibility', 'none'); continue; }
     } catch (_) {}
   }
 
-  // 대지-수계 경계 0.5px 아웃라인 — 항상 표시 (안티앨리어싱 마스킹)
-  const LAND_OUTLINE_ID = 'mini-land-outline';
+  // 대지-수계 경계 anti-aliasing 완화
+  const OUTLINE_ID = 'mini-land-outline';
   try {
-    if (!map.getSource('mini-land-src')) {
-      // land fill 레이어와 같은 소스(composite) 사용
+    if (!map.getLayer(OUTLINE_ID)) {
       map.addLayer({
-        id: LAND_OUTLINE_ID,
-        type: 'line',
-        source: 'composite',
-        'source-layer': 'water',
+        id: OUTLINE_ID, type: 'line', source: 'composite', 'source-layer': 'water',
         layout: { 'line-join': 'round', 'line-cap': 'round' },
-        paint: {
-          'line-color': cfg.land,   // 대지색으로 수계 경계를 덮음
-          'line-width': 0.5,
-          'line-opacity': 1,
-        },
+        paint: { 'line-color': 'rgb(200,200,200)', 'line-width': 1, 'line-opacity': 1 },
       });
     } else {
-      map.setPaintProperty(LAND_OUTLINE_ID, 'line-color', cfg.land);
+      map.setPaintProperty(OUTLINE_ID, 'line-color', 'rgb(200,200,200)');
+      map.setPaintProperty(OUTLINE_ID, 'line-width', 1);
     }
   } catch (_) {}
 }
 
 export function MapToastPanel() {
   const miniContainerRef = useRef<HTMLDivElement>(null);
-  const miniMapRef = useRef<mapboxgl.Map | null>(null);
-  const miniLoadedRef = useRef(false);
+  const miniMapRef       = useRef<mapboxgl.Map | null>(null);
+  const miniLoadedRef    = useRef(false);
 
-  const {
-    mapInstance,
-    setMapToastActive,
-    mapToastScheme, setMapToastScheme,
-    showRoads,
-    borders,
-  } = useMapStore();
+  const { mapInstance, setMapToastActive, mapToastScheme, setMapToastScheme, showRoads, borders } = useMapStore();
 
-  const [miniReady, setMiniReady] = useState(false);
-  const [syncing, setSyncing] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [miniReady,  setMiniReady]  = useState(false);
+  const [syncing,    setSyncing]    = useState(false);
+  const [capturing,  setCapturing]  = useState(false);
+  const [saved,      setSaved]      = useState(false);
 
-  // 섹션이 닫혔다 열려도 syncing/miniMap 상태 유지 — 별도 처리 불필요
-  // (섹션 토글은 visibility CSS로만 처리되므로 ref들은 살아있음)
-
-  // ── 미니맵 초기화 ──────────────────────────────────────────────────────────
+  // ── 미니맵 초기화 ────────────────────────────────────────────────────────
   useEffect(() => {
     if (!miniContainerRef.current || miniMapRef.current) return;
     const mini = new mapboxgl.Map({
@@ -225,10 +156,7 @@ export function MapToastPanel() {
     mini.on('load', () => {
       miniLoadedRef.current = true;
       const store = useMapStore.getState();
-      applySchemeToMini(mini, store.mapToastScheme, store.showRoads,
-        store.borderTouched ? store.borders.country.color : '#F5F5F5',
-        store.borders.country.width);
-      // 스킴 적용 완료 후 표시 — 기본 Mapbox 테마 노출 방지
+      applySchemeToMini(mini, store.mapToastScheme, store.showRoads, store.borders.country.width);
       setMiniReady(true);
     });
     miniMapRef.current = mini;
@@ -239,17 +167,14 @@ export function MapToastPanel() {
     };
   }, []);
 
-  // ── 스킴·도로·국경색 변경 시 재적용 ──────────────────────────────────────
+  // ── 스킴·도로·국경 변경 시 재적용 ────────────────────────────────────────
   useEffect(() => {
     const mini = miniMapRef.current;
     if (!mini || !miniLoadedRef.current) return;
-    const { borderTouched } = useMapStore.getState();
-    applySchemeToMini(mini, mapToastScheme, showRoads,
-      borderTouched ? borders.country.color : '#F5F5F5',
-      borders.country.width);
+    applySchemeToMini(mini, mapToastScheme, showRoads, borders.country.width);
   }, [mapToastScheme, showRoads, borders]);
 
-  // ── A. 동기화: 메인맵 이동·pitch 따라감 ──────────────────────────────────
+  // ── 메인맵 동기화 ────────────────────────────────────────────────────────
   useEffect(() => {
     if (!syncing || !mapInstance || !miniMapRef.current) return;
     const mini = miniMapRef.current;
@@ -264,35 +189,84 @@ export function MapToastPanel() {
     return () => { mapInstance.off('move', sync); };
   }, [syncing, mapInstance]);
 
-  // ── 클릭: 1차=LIVE, 2차=PNG 캡처 ─────────────────────────────────────────
+  // ── Hi-Res 캡처 (옵션 A) ─────────────────────────────────────────────────
+  const doCapture = useCallback(() => {
+    const mini = miniMapRef.current;
+    if (!mini || !miniLoadedRef.current || capturing) return;
+    setCapturing(true);
+
+    const mult = 4;  // ×4 = 1536px → 384px 다운샘플
+    const hiSize = OUTPUT_SIZE * mult;       // 768 or 1536
+    const origRatio = (mini as any).getPixelRatio?.() ?? window.devicePixelRatio ?? 1;
+
+    // 1. pixelRatio 올려서 고해상도 렌더
+    try { (mini as any).setPixelRatio(origRatio * mult); } catch (_) {}
+
+    mini.once('idle', () => {
+      try {
+        const src = mini.getCanvas();  // 업스케일된 캔버스
+
+        // 2. 중앙 hiSize×hiSize 영역 crop
+        const cropX = Math.max(0, (src.width  - hiSize) / 2);
+        const cropY = Math.max(0, (src.height - hiSize) / 2);
+        const cropW = Math.min(hiSize, src.width);
+        const cropH = Math.min(hiSize, src.height);
+
+        const cropped = document.createElement('canvas');
+        cropped.width  = cropW;
+        cropped.height = cropH;
+        const cCtx = cropped.getContext('2d')!;
+        cCtx.drawImage(src, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+
+        // 3. 최종 384×384 출력 캔버스
+        const out = document.createElement('canvas');
+        out.width  = OUTPUT_SIZE;
+        out.height = OUTPUT_SIZE;
+        const oCtx = out.getContext('2d')!;
+        oCtx.imageSmoothingEnabled  = true;
+        oCtx.imageSmoothingQuality  = 'high';
+        oCtx.drawImage(cropped, 0, 0, OUTPUT_SIZE, OUTPUT_SIZE);
+
+        // 4. 2px 보더
+        oCtx.strokeStyle = BORDER_COLOR;
+        oCtx.lineWidth   = BORDER_PX * 2;  // inset이므로 ×2 (절반만 노출)
+        oCtx.strokeRect(0, 0, OUTPUT_SIZE, OUTPUT_SIZE);
+
+        // 5. 저장
+        out.toBlob((blob) => {
+          if (!blob) return;
+          const url = URL.createObjectURL(blob);
+          const a   = Object.assign(document.createElement('a'), {
+            href: url,
+            download: `map-toast_${mapToastScheme}_${OUTPUT_SIZE}px_${Date.now()}.png`,
+          });
+          document.body.appendChild(a); a.click(); document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          setSaved(true);
+          setTimeout(() => setSaved(false), 1800);
+        }, 'image/png');
+
+      } catch (e) {
+        console.error('MapToast capture error', e);
+      } finally {
+        // 6. pixelRatio 원복
+        try { (mini as any).setPixelRatio(origRatio); } catch (_) {}
+        setCapturing(false);
+      }
+    });
+
+    mini.triggerRepaint();
+  }, [capturing, mapToastScheme]);
+
+  // ── 미니맵 클릭 핸들러 ──────────────────────────────────────────────────
   const handleClick = useCallback(() => {
     if (!syncing) {
       setSyncing(true);
       setMapToastActive(true);
     } else {
-      const mini = miniMapRef.current;
-      if (!mini) return;
-      mini.once('render', () => {
-        try {
-          const off = document.createElement('canvas');
-          off.width = 384; off.height = 384;
-          const ctx = off.getContext('2d')!;
-          ctx.drawImage(mini.getCanvas(), 0, 0, 384, 384);
-          // 캡처 결과물에만 1px inset 보더 (#F0F0F0)
-          ctx.strokeStyle = 'rgb(240,240,240)';
-          ctx.lineWidth = 2; // inset이므로 실제 노출은 1px
-          ctx.strokeRect(1, 1, 382, 382);
-          const a = document.createElement('a');
-          a.download = `map-toast_${mapToastScheme}_${Date.now()}.png`;
-          a.href = off.toDataURL('image/png');
-          a.click();
-          setSaved(true);
-          setTimeout(() => setSaved(false), 1800);
-        } catch (e) { console.error('capture error', e); }
-      });
-      mini.triggerRepaint();
+      doCapture();
     }
-  }, [syncing, mapToastScheme, setMapToastActive]);
+  }, [syncing, doCapture, setMapToastActive]);
 
   const cfg = SCHEME_CONFIGS[mapToastScheme];
 
@@ -308,17 +282,19 @@ export function MapToastPanel() {
             border: `2px solid ${syncing ? 'var(--accent)' : 'var(--glass-border)'}`,
             overflow: 'hidden', cursor: 'pointer', transition: 'border-color 0.2s', flexShrink: 0,
           }}
-          title={syncing ? '클릭하면 384×384 PNG 캡처' : '클릭하면 LIVE 싱크 시작'}
+          title={syncing ? `클릭 → ${OUTPUT_SIZE}×${OUTPUT_SIZE} Hi-Res PNG 캡처` : '클릭하면 LIVE 싱크 시작'}
         >
           <div ref={miniContainerRef} style={{
             position: 'absolute', inset: 0, width: '100%', height: '100%',
-            filter: syncing ? 'none' : 'brightness(0.7)', transition: 'filter 0.3s',
-            opacity: miniReady ? 1 : 0, transition: 'opacity 0.3s, filter 0.3s',
+            filter: syncing ? 'none' : 'brightness(0.7)',
+            opacity: miniReady ? 1 : 0,
+            transition: 'opacity 0.3s, filter 0.3s',
           }} />
-          {/* 안티앨리어싱 가리는 1px inset 경계선 */}
+
+          {/* inset 경계선 */}
           <div style={{
             position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 5,
-            boxShadow: 'inset 0 0 0 1px rgb(240,240,240)',
+            boxShadow: `inset 0 0 0 1px ${BORDER_COLOR}`,
           }} />
 
           {!syncing && (
@@ -337,7 +313,7 @@ export function MapToastPanel() {
             </div>
           )}
 
-          {syncing && !saved && (
+          {syncing && !saved && !capturing && (
             <div style={{
               position: 'absolute', top: 6, right: 6, background: '#c0392b',
               padding: '2px 6px', display: 'flex', alignItems: 'center', gap: '4px', zIndex: 10,
@@ -350,6 +326,18 @@ export function MapToastPanel() {
                 fontFamily: "'DM Mono', monospace", fontSize: '9px', color: 'white',
                 letterSpacing: '0.06em', fontWeight: 600,
               }}>LIVE</span>
+            </div>
+          )}
+
+          {capturing && (
+            <div style={{
+              position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.35)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10,
+            }}>
+              <span style={{
+                fontFamily: "'DM Mono', monospace", fontSize: '11px', color: 'white',
+                letterSpacing: '0.10em', fontWeight: 600,
+              }}>RENDERING…</span>
             </div>
           )}
 
@@ -366,7 +354,7 @@ export function MapToastPanel() {
           )}
         </div>
 
-        {/* E. 컬러 스킴 아이콘 3개 */}
+        {/* 컬러 스킴 */}
         <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', alignItems: 'center' }}>
           {SCHEME_ORDER.map((scheme) => {
             const s = SCHEME_CONFIGS[scheme];
@@ -394,7 +382,11 @@ export function MapToastPanel() {
         </div>
 
         <p style={{ ...labelStyle, textAlign: 'center', fontSize: '10px', color: 'var(--muted-foreground)', margin: 0 }}>
-          {syncing ? 'Click minimap to capture 384×384 PNG' : `${cfg.labelKo} · Click to activate`}
+          {capturing
+            ? `1536px 렌더 중…`
+            : syncing
+              ? `클릭 → 1536px 캡처 → ${OUTPUT_SIZE}px 저장`
+              : `${cfg.labelKo} · Click to activate`}
         </p>
       </div>
 
