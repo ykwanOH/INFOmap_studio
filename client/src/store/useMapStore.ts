@@ -16,7 +16,7 @@ export type MapToastScheme = 'twotone' | 'beigegray' | 'bluegray';
 // district : 구/시 경계 (한국 sgg 레벨, 서울 25구 + 각 도 시군)
 export type BorderLevel = 'country' | 'state' | 'district';
 export type RouteIconType = 'plane' | 'missile' | 'custom';
-export type ExtraLookType = 'monotone' | 'vintage' | 'digital' | null;
+export type ExtraLookType = 'bwprint' | 'vintage' | 'digital' | null;
 export type RouteCapStyle = 'none' | 'circle' | 'arrow';
 export type RouteLineStyle = 'solid' | 'dashed';
 
@@ -165,8 +165,8 @@ export interface MapStoreState {
   setHillshadeSharpness: (v: number) => void;
   elevationPreset: 'natural' | 'vivid' | 'arctic';
   setElevationPreset: (v: 'natural' | 'vivid' | 'arctic') => void;
-  elevationColors: { shadow: string; highlight: string; accent: string };
-  setElevationColors: (c: { shadow: string; highlight: string; accent: string }) => void;
+  elevationColors: { shadow: string; highlight: string; midtone: string };
+  setElevationColors: (c: { shadow: string; highlight: string; midtone: string }) => void;
   illuminationAngle: number;
   setIlluminationAngle: (v: number) => void;
 
@@ -202,6 +202,24 @@ export interface MapStoreState {
   extraLookPreviewOpen: boolean;
   setExtraLookPreviewOpen: (v: boolean) => void;
 
+  // ── BW Print settings ──
+  bwStripeColor: string;
+  setBwStripeColor: (v: string) => void;
+  bwStripeAngle: number;
+  setBwStripeAngle: (v: number) => void;
+  bwStripeWidth: number;
+  setBwStripeWidth: (v: number) => void;
+  bwStripeGap: number;
+  setBwStripeGap: (v: number) => void;
+
+  // ── Vintage preset ──
+  vintagePreset: 'kodachrome' | 'desert' | 'bauhaus';
+  setVintagePreset: (v: 'kodachrome' | 'desert' | 'bauhaus') => void;
+
+  // ── Digital preset ──
+  digitalPreset: 'cyberglitch' | 'neonnights';
+  setDigitalPreset: (v: 'cyberglitch' | 'neonnights') => void;
+
   // ── Panel section open/close ──
   sections: Record<string, boolean>;
   toggleSection: (key: string) => void;
@@ -218,7 +236,7 @@ const DEFAULT_COLORS: ColorConfig = {
 };
 
 const DEFAULT_BORDERS: Record<BorderLevel, BorderConfig> = {
-  country:  { enabled: true,  color: '#403E35', width: 3.0 },
+  country:  { enabled: true,  color: '#949184', width: 1.5 },
   state:    { enabled: false, color: '#F2EBE8', width: 1.0 },
   district: { enabled: false, color: '#F2EBE8', width: 1.0 },
 };
@@ -397,7 +415,7 @@ export const useMapStore = create<MapStoreState>((set, get) => ({
   setHillshadeSharpness: (v) => set({ hillshadeSharpness: v }),
   elevationPreset: 'natural',
   setElevationPreset: (v) => set({ elevationPreset: v }),
-  elevationColors: { shadow: '#c09050', highlight: '#d0d0d0', accent: '#4a8a4a' },
+  elevationColors: { shadow: '#c09050', highlight: '#d0d0d0', midtone: '#4a8a4a' },
   setElevationColors: (c) => set({ elevationColors: c }),
   illuminationAngle: 315,
   setIlluminationAngle: (v) => set({ illuminationAngle: v }),
@@ -440,6 +458,24 @@ export const useMapStore = create<MapStoreState>((set, get) => ({
   setExtraLook: (v) => set({ extraLook: v }),
   extraLookPreviewOpen: false,
   setExtraLookPreviewOpen: (v) => set({ extraLookPreviewOpen: v }),
+
+  // ── BW Print settings ──
+  bwStripeColor: '#555555',
+  setBwStripeColor: (v) => set({ bwStripeColor: v }),
+  bwStripeAngle: 45,
+  setBwStripeAngle: (v) => set({ bwStripeAngle: v }),
+  bwStripeWidth: 3,
+  setBwStripeWidth: (v) => set({ bwStripeWidth: v }),
+  bwStripeGap: 6,
+  setBwStripeGap: (v) => set({ bwStripeGap: v }),
+
+  // ── Vintage preset ──
+  vintagePreset: 'kodachrome' as const,
+  setVintagePreset: (v) => set({ vintagePreset: v }),
+
+  // ── Digital preset ──
+  digitalPreset: 'cyberglitch' as const,
+  setDigitalPreset: (v) => set({ digitalPreset: v }),
 
   // ── Panel sections ──
   sections: { ...DEFAULT_SECTIONS },

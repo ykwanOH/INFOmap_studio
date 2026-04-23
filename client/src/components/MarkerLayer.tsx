@@ -1,96 +1,96 @@
 /**
- * MACRO Map Studio — MarkerLayer v3
- * - 마커 클릭 → 선택 (하이라이트) — 재생성 없이 스타일만 변경
+ * MACRO Map Studio — MarkerLayer v4
+ * - 마커 클릭 → 선택 (하이라이트)
  * - Del / Backspace → 선택 마커 삭제
  * - 지도 빈 곳 클릭 → 선택 해제
+ *
+ * v4 fix: Mapbox Marker 위치 transform 충돌 버그 수정
+ * wrapper(Mapbox용) + dot(시각용) 분리 — dot만 transform
  */
 
 import { useEffect, useRef } from 'react';
 import mapboxgl from 'mapbox-gl';
 import { useMapStore } from '@/store/useMapStore';
 
+interface MarkerRefs {
+  marker: mapboxgl.Marker;
+  dot: HTMLElement;
+}
+
 export function MarkerLayer() {
   const { mapInstance, markers } = useMapStore();
-  const markerRefs = useRef<Map<string, mapboxgl.Marker>>(new Map());
-  // ref로 관리 — state로 하면 마커 재생성 루프 발생
+  const markerRefs = useRef<Map<string, MarkerRefs>>(new Map());
   const selectedIdRef = useRef<string | null>(null);
 
-  const applyStyle = (id: string, color: string, selected: boolean) => {
-    const marker = markerRefs.current.get(id);
-    if (!marker) return;
-    const el = marker.getElement();
-    el.style.border = `2.5px solid ${selected ? '#ffffff' : 'rgba(255,255,255,0.6)'}`;
-    el.style.boxShadow = selected
-      ? `0 0 0 2.5px ${color}, 0 2px 8px rgba(0,0,0,0.45)`
-      : '0 1px 4px rgba(0,0,0,0.3)';
-    el.style.transform = selected ? 'scale(1.3)' : 'scale(1)';
-    el.style.zIndex = selected ? '10' : '1';
+  const applyDotStyle = (dot: HTMLElement, color: string, selected: boolean) => {
+    dot.style.border = `2.5px solid ${selected ? '#ffffff' : 'rgba(255,255,255,0.65)'}`;
+    dot.style.boxShadow = selected
+      ? `0 0 0 2.5px ${color}, 0 2px 10px rgba(0,0,0,0.5)`
+      : '0 1px 4px rgba(0,0,0,0.32)';
+    dot.style.transform = selected ? 'scale(1.35)' : 'scale(1)';
+    dot.style.zIndex = selected ? '10' : '1';
   };
 
-  // ── 마커 추가 / 제거 ───────────────────────────────────────────────────
   useEffect(() => {
     if (!mapInstance) return;
 
-    // 삭제된 마커 제거
     const currentIds = new Set(markers.map((m) => m.id));
-    markerRefs.current.forEach((marker, id) => {
+    markerRefs.current.forEach((refs, id) => {
       if (!currentIds.has(id)) {
-        marker.remove();
+        refs.marker.remove();
         markerRefs.current.delete(id);
         if (selectedIdRef.current === id) selectedIdRef.current = null;
       }
     });
 
-    // 새 마커 추가
     markers.forEach((m) => {
       if (markerRefs.current.has(m.id)) return;
 
-      const el = document.createElement('div');
-      el.style.cssText = `
-        width: 13px;
-        height: 13px;
-        border-radius: 50%;
-        background: ${m.color};
-        border: 2.5px solid rgba(255,255,255,0.6);
-        box-shadow: 0 1px 4px rgba(0,0,0,0.3);
-        cursor: pointer;
-        transition: transform 0.12s, box-shadow 0.12s;
-        position: relative;
-      `;
+      // Outer wrapper: Mapbox 포지셔닝 전용 (이 요소에 transform 사용 금지)
+      const wrapper = document.createElement('div');
+      wrapper.style.cssText = `width:18px;height:18px;display:flex;align-items:center;justify-content:center;cursor:pointer;`;
 
-      el.addEventListener('click', (e) => {
+      // Inner dot: 시각 전용, transform 여기서만 사용
+      const dot = document.createElement('div');
+      dot.style.cssText = `
+        width:12px;height:12px;border-radius:50%;
+        background:${m.color};
+        border:2.5px solid rgba(255,255,255,0.65);
+        box-shadow:0 1px 4px rgba(0,0,0,0.32);
+        transition:transform 0.12s,box-shadow 0.12s,border-color 0.12s;
+        flex-shrink:0;position:relative;
+      `;
+      wrapper.appendChild(dot);
+
+      wrapper.addEventListener('click', (e) => {
         e.stopPropagation();
         const prev = selectedIdRef.current;
-
-        // 이전 선택 해제
         if (prev && prev !== m.id) {
-          const prevMarker = markers.find(mk => mk.id === prev);
-          if (prevMarker) applyStyle(prev, prevMarker.color, false);
+          const pr = markerRefs.current.get(prev);
+          const pm = markers.find(mk => mk.id === prev);
+          if (pr && pm) applyDotStyle(pr.dot, pm.color, false);
         }
-
-        // 토글
         if (prev === m.id) {
           selectedIdRef.current = null;
-          applyStyle(m.id, m.color, false);
+          applyDotStyle(dot, m.color, false);
         } else {
           selectedIdRef.current = m.id;
-          applyStyle(m.id, m.color, true);
+          applyDotStyle(dot, m.color, true);
         }
       });
 
-      const popup = new mapboxgl.Popup({ offset: 12, closeButton: false })
+      const popup = new mapboxgl.Popup({ offset: 14, closeButton: false })
         .setHTML(`<span style="font-family:'DM Sans',sans-serif;font-size:11px;color:#2a2520;">${m.name.split(',')[0]}</span>`);
 
-      const marker = new mapboxgl.Marker({ element: el })
+      const marker = new mapboxgl.Marker({ element: wrapper, anchor: 'center' })
         .setLngLat([m.lng, m.lat])
         .setPopup(popup)
         .addTo(mapInstance);
 
-      markerRefs.current.set(m.id, marker);
+      markerRefs.current.set(m.id, { marker, dot });
     });
   }, [mapInstance, markers]);
 
-  // ── Del / Backspace 삭제 ───────────────────────────────────────────────
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       const id = selectedIdRef.current;
@@ -99,8 +99,8 @@ export function MarkerLayer() {
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
-        const marker = markerRefs.current.get(id);
-        if (marker) { marker.remove(); markerRefs.current.delete(id); }
+        const refs = markerRefs.current.get(id);
+        if (refs) { refs.marker.remove(); markerRefs.current.delete(id); }
         useMapStore.setState((s) => ({ markers: s.markers.filter((m) => m.id !== id) }));
         selectedIdRef.current = null;
       }
@@ -109,24 +109,23 @@ export function MarkerLayer() {
     return () => window.removeEventListener('keydown', handleKey);
   }, []);
 
-  // ── 지도 빈 곳 클릭 → 선택 해제 ──────────────────────────────────────
   useEffect(() => {
     if (!mapInstance) return;
     const deselect = () => {
       const id = selectedIdRef.current;
       if (!id) return;
+      const refs = markerRefs.current.get(id);
       const m = useMapStore.getState().markers.find((mk) => mk.id === id);
-      if (m) applyStyle(id, m.color, false);
+      if (refs && m) applyDotStyle(refs.dot, m.color, false);
       selectedIdRef.current = null;
     };
     mapInstance.on('click', deselect);
     return () => { mapInstance.off('click', deselect); };
   }, [mapInstance]);
 
-  // ── Unmount 정리 ──────────────────────────────────────────────────────
   useEffect(() => {
     return () => {
-      markerRefs.current.forEach((m) => m.remove());
+      markerRefs.current.forEach((refs) => refs.marker.remove());
       markerRefs.current.clear();
     };
   }, []);

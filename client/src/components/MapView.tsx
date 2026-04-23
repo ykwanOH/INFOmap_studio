@@ -18,10 +18,41 @@ mapboxgl.accessToken =
 const VECTOR_STYLE = 'mapbox://styles/mapbox/streets-v12';
 const SATELLITE_STYLE = 'mapbox://styles/mapbox/satellite-streets-v12';
 
-const EXTRA_LOOK_FILTERS: Record<string, string> = {
-  monotone: 'grayscale(1) contrast(1.1) brightness(1.05)',
-  vintage: 'sepia(0.55) contrast(1.05) brightness(0.95) saturate(0.8) hue-rotate(-8deg)',
-  digital: 'saturate(1.6) contrast(1.15) brightness(1.05) hue-rotate(10deg)',
+// BW Print stripe pattern generator
+function createStripeCanvas(
+  color: string, angleDeg: number, lineWidth: number, gap: number
+): HTMLCanvasElement {
+  const period = Math.max(1, lineWidth + gap);
+  const size = Math.max(64, Math.ceil(period * 8));
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  ctx.clearRect(0, 0, size, size);
+  const rad = (angleDeg * Math.PI) / 180;
+  ctx.save();
+  ctx.translate(size / 2, size / 2);
+  ctx.rotate(rad);
+  ctx.fillStyle = color;
+  const diag = size * 1.5;
+  for (let x = -diag; x <= diag; x += period) {
+    ctx.fillRect(x, -diag, lineWidth, diag * 2);
+  }
+  ctx.restore();
+  return canvas;
+}
+
+// Vintage color palettes
+const VINTAGE_PALETTES = {
+  kodachrome: { land: '#FAEDCD', hydro: '#D4A373', green: '#CCD5AE', expressway: '#E9EDC9', streetroad: '#C8B59A' },
+  desert:     { land: '#FEFAE0', hydro: '#DDA15E', green: '#606C38', expressway: '#BC6C25', streetroad: '#283618' },
+  bauhaus:    { land: '#F1FAEE', hydro: '#1D3557', green: '#A8DADC', expressway: '#457B9D', streetroad: '#E63946' },
+};
+
+// Digital color palettes  
+const DIGITAL_PALETTES = {
+  cyberglitch: { land: '#1F2833', hydro: '#0B0C10', green: '#0B0C10', expressway: '#66FCF1', streetroad: '#45A29E' },
+  neonnights:  { land: '#0A001F', hydro: '#060012', green: '#060012', expressway: '#B100E8', streetroad: '#6A00F4' },
 };
 
 // 지역명 관련 레이어 ID 패턴 (모든 텍스트 레이어 포함)
@@ -121,6 +152,8 @@ export default function MapView() {
     flyRoute,
     pickMode, addPickedFeature, pickedFeatures, pickDisplayMode, pickUnitMode,
     extraLook,
+    bwStripeColor, bwStripeAngle, bwStripeWidth, bwStripeGap,
+    vintagePreset, digitalPreset,
   } = useMapStore();
 
   // ── Initialize map ──────────────────────────────────────────────────────
@@ -394,7 +427,7 @@ export default function MapView() {
             'hillshade-exaggeration': 0.65,
             'hillshade-shadow-color': elevationColors.shadow,
             'hillshade-highlight-color': elevationColors.highlight,
-            'hillshade-accent-color': elevationColors.accent,
+            'hillshade-accent-color': elevationColors.midtone,
             'hillshade-illumination-direction': illuminationAngle,
           } as any,
         }, 'water');
@@ -717,44 +750,115 @@ export default function MapView() {
     }
   }, [pickedFeatures, pickDisplayMode]);
 
-  // ── Extra Look — CSS filter overlay on map canvas ───────────────────────
+  // ── Extra Look — comprehensive mode effects ────────────────────────────
+  // Helper: apply color config to Mapbox style layers
+  const applyColorsToMap = useCallback((map: mapboxgl.Map, c: typeof colors) => {
+    const layers = map.getStyle()?.layers || [];
+    for (const layer of layers) {
+      const { id, type } = layer;
+      try {
+        if (type === 'background') { map.setPaintProperty(id, 'background-color', c.landmass); continue; }
+        const isWater = id.includes('water') || id === 'water-shadow';
+        if (type === 'fill' && isWater) { map.setPaintProperty(id, 'fill-color', c.hydro); continue; }
+        if (type === 'line' && id.includes('waterway')) { map.setPaintProperty(id, 'line-color', c.hydro); continue; }
+        if (type === 'fill' && !isWater) {
+          const isGreen = id.includes('park') || id.includes('green') || id.includes('wood') || id.includes('scrub') || id.includes('crop') || id.includes('grass') || id.includes('landcover');
+          map.setPaintProperty(id, 'fill-color', isGreen ? c.green : c.landmass);
+          continue;
+        }
+      } catch (_) {}
+    }
+  }, [colors]);
+
   useEffect(() => {
+    const map = mapRef.current;
     const container = containerRef.current;
     if (!container) return;
-    const canvas = container.querySelector('canvas');
-    if (!canvas) return;
-    if (extraLook && EXTRA_LOOK_FILTERS[extraLook]) {
-      canvas.style.filter = EXTRA_LOOK_FILTERS[extraLook];
-      // Scanline for vintage
-      let scanline = container.querySelector('#macro-scanline') as HTMLDivElement | null;
-      if (extraLook === 'vintage') {
-        if (!scanline) {
-          scanline = document.createElement('div');
-          scanline.id = 'macro-scanline';
-          scanline.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:5;background-image:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.07) 2px,rgba(0,0,0,0.07) 4px);';
-          container.appendChild(scanline);
-        }
-      } else {
-        scanline?.remove();
-      }
-      // Grid for digital
-      let grid = container.querySelector('#macro-grid') as HTMLDivElement | null;
-      if (extraLook === 'digital') {
-        if (!grid) {
-          grid = document.createElement('div');
-          grid.id = 'macro-grid';
-          grid.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:5;background-image:linear-gradient(rgba(0,120,255,0.04) 1px,transparent 1px),linear-gradient(90deg,rgba(0,120,255,0.04) 1px,transparent 1px);background-size:24px 24px;';
-          container.appendChild(grid);
-        }
-      } else {
-        grid?.remove();
-      }
-    } else {
-      canvas.style.filter = '';
+    const mapCanvas = container.querySelector('canvas') as HTMLCanvasElement | null;
+
+    // Clear all overlays
+    const clearOverlays = () => {
+      container.querySelector('#macro-vignette')?.remove();
       container.querySelector('#macro-scanline')?.remove();
+      container.querySelector('#macro-noise')?.remove();
       container.querySelector('#macro-grid')?.remove();
+      container.querySelector('#macro-hud')?.remove();
+      if (mapCanvas) mapCanvas.style.filter = '';
+    };
+
+    const addOverlay = (id: string, cssText: string) => {
+      if (!container.querySelector('#' + id)) {
+        const el = document.createElement('div');
+        el.id = id;
+        el.style.cssText = cssText;
+        container.appendChild(el);
+      }
+    };
+
+    clearOverlays();
+
+    if (!extraLook || !map || !styleLoadedRef.current) {
+      // Restore base colors
+      if (map && styleLoadedRef.current) applyColorsToMap(map, colors);
+      // Restore water fill-color, remove stripe pattern
+      if (map && styleLoadedRef.current) {
+        ['water', 'water-shadow'].forEach(id => {
+          try { if (map.getLayer(id)) { map.setPaintProperty(id, 'fill-pattern', null); map.setPaintProperty(id, 'fill-color', colors.hydro); } } catch (_) {}
+        });
+        if (map.hasImage('bw-stripe')) map.removeImage('bw-stripe');
+        // Restore road blur
+        const layers2 = map.getStyle()?.layers || [];
+        layers2.filter(l => l.id.startsWith('road-') || l.id.startsWith('bridge-')).forEach(l => {
+          try { map.setPaintProperty(l.id, 'line-blur', 0); } catch (_) {}
+        });
+      }
+      return;
     }
-  }, [extraLook]);
+
+    // ── BW PRINT ──────────────────────────────────────────────────────────
+    if (extraLook === 'bwprint') {
+      if (mapCanvas) mapCanvas.style.filter = 'grayscale(1) contrast(1.08) brightness(1.04)';
+      applyColorsToMap(map, { landmass: '#F5F5EE', hydro: '#CCCCCC', green: '#E8E8E0', expressway: '#DEDEDE', streetroad: '#D4D4D0' });
+      // Water: stripe fill-pattern
+      const stripeCanvas = createStripeCanvas(bwStripeColor, bwStripeAngle, bwStripeWidth, bwStripeGap);
+      if (map.hasImage('bw-stripe')) map.removeImage('bw-stripe');
+      map.addImage('bw-stripe', stripeCanvas as any, { pixelRatio: 2 });
+      ['water', 'water-shadow'].forEach(id => {
+        try { if (map.getLayer(id)) { map.setPaintProperty(id, 'fill-pattern', 'bw-stripe'); } } catch (_) {}
+      });
+    }
+
+    // ── VINTAGE ───────────────────────────────────────────────────────────
+    if (extraLook === 'vintage') {
+      const pal = VINTAGE_PALETTES[vintagePreset ?? 'kodachrome'];
+      applyColorsToMap(map, { landmass: pal.land, hydro: pal.hydro, green: pal.green, expressway: pal.expressway, streetroad: pal.streetroad });
+      if (mapCanvas) mapCanvas.style.filter = 'sepia(0.3) contrast(1.05) brightness(0.96) saturate(0.9)';
+      // Vignette overlay
+      addOverlay('macro-vignette', 'position:absolute;inset:0;pointer-events:none;z-index:4;background:radial-gradient(ellipse at center, transparent 40%, rgba(30,15,5,0.55) 100%);');
+      // Scanline/interlace
+      addOverlay('macro-scanline', 'position:absolute;inset:0;pointer-events:none;z-index:5;background-image:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,0.05) 3px,rgba(0,0,0,0.05) 4px);');
+      // Color noise via SVG feTurbulence filter
+      addOverlay('macro-noise', `position:absolute;inset:0;pointer-events:none;z-index:6;opacity:0.18;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");background-size:200px 200px;mix-blend-mode:multiply;`);
+    }
+
+    // ── DIGITAL ───────────────────────────────────────────────────────────
+    if (extraLook === 'digital') {
+      const pal = DIGITAL_PALETTES[digitalPreset ?? 'cyberglitch'];
+      applyColorsToMap(map, { landmass: pal.land, hydro: pal.hydro, green: pal.green, expressway: pal.expressway, streetroad: pal.streetroad });
+      if (mapCanvas) mapCanvas.style.filter = 'saturate(1.4) contrast(1.2) brightness(1.05)';
+      // Grid overlay
+      const gridColor = digitalPreset === 'neonnights' ? 'rgba(177,0,232,0.08)' : 'rgba(102,252,241,0.06)';
+      addOverlay('macro-grid', `position:absolute;inset:0;pointer-events:none;z-index:4;background-image:linear-gradient(${gridColor} 1px,transparent 1px),linear-gradient(90deg,${gridColor} 1px,transparent 1px);background-size:20px 20px;`);
+      // HUD corners
+      const hudColor = digitalPreset === 'neonnights' ? 'rgba(177,0,232,0.7)' : 'rgba(102,252,241,0.7)';
+      addOverlay('macro-hud', `position:absolute;inset:0;pointer-events:none;z-index:6;box-shadow:inset 0 0 0 1px ${hudColor.replace('0.7','0.15')},inset 0 0 40px ${hudColor.replace('0.7','0.08')};`);
+      // Road glow effect via line-blur
+      const roadLayers = (map.getStyle()?.layers || []).filter(l => l.id.startsWith('road-') || l.id.startsWith('bridge-'));
+      roadLayers.forEach(l => { try { map.setPaintProperty(l.id, 'line-blur', 2); } catch (_) {} });
+    }
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [extraLook, bwStripeColor, bwStripeAngle, bwStripeWidth, bwStripeGap, vintagePreset, digitalPreset, colors]);
 
   // ── Map click handler ───────────────────────────────────────────────────
   const handleMapClick = useCallback(

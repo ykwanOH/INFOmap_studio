@@ -143,11 +143,6 @@ export function HiResPanel() {
         </div>
       </div>
 
-      {/* 설명 */}
-      <div style={{ ...labelStyle, fontSize: '11px', color: 'var(--muted-foreground)' }}>
-        ×{mult} 업스케일
-      </div>
-
       {/* 예상 출력 크기 */}
       {outW > 0 && (
         <div style={{

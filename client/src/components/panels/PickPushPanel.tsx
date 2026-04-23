@@ -7,29 +7,10 @@
  * - Export: PNG (전체 or 선택만 투명배경) / SVG (선택만)
  */
 
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import { useMapStore, type PickDisplayMode, type PickUnitMode } from '@/store/useMapStore';
 import { SectionPanel, SliderControl, ColorPicker, Toggle } from '@/components/ui/SectionPanel';
 import { MousePointer2, RotateCcw, Trash2, X, Download } from 'lucide-react';
-
-// 프리셋별 hillshade 컬러 기본값 (shadow, highlight, accent)
-const ELEVATION_PRESETS = [
-  {
-    key: 'natural' as const, label: 'Natural',
-    gradientColors: ['#4a8a4a', '#a8c870', '#e8d890', '#d0a870', '#b08060'],
-    hillshade: { shadow: '#c09050', highlight: '#d0d0d0', accent: '#4a8a4a' },
-  },
-  {
-    key: 'vivid' as const, label: 'Vivid',
-    gradientColors: ['#2060c0', '#40a060', '#e0c040', '#e06020', '#c02020'],
-    hillshade: { shadow: '#e06020', highlight: '#ffffff', accent: '#2060c0' },
-  },
-  {
-    key: 'arctic' as const, label: 'Arctic',
-    gradientColors: ['#c0d8f0', '#a0c0e0', '#e0e8f0', '#f0f4f8', '#ffffff'],
-    hillshade: { shadow: '#a0c0e0', highlight: '#ffffff', accent: '#c0d8f0' },
-  },
-];
 
 const labelStyle = {
   fontFamily: "'DM Sans', sans-serif",
@@ -57,20 +38,11 @@ export function PickPushPanel() {
     resetAllPicks,
     mapInstance,
     extraLook,
-    terrainExaggeration, setTerrainExaggeration,
-    hillshadeEnabled, setHillshadeEnabled,
-    hillshadeSharpness, setHillshadeSharpness,
-    elevationPreset, setElevationPreset,
-    elevationColors, setElevationColors,
-    illuminationAngle, setIlluminationAngle,
   } = useMapStore();
 
   const [selectionOnly, setSelectionOnly] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [exportResolution, setExportResolution] = useState<'fhd' | '4k'>('fhd');
-  const [elevationModalOpen, setElevationModalOpen] = useState(false);
-  const [modalPos, setModalPos] = useState({ top: 0, right: 0 });
-  const elevationBtnRef = useRef<HTMLDivElement>(null);
 
   const pickUnit = borders.district.enabled ? '구 / 시군'
     : borders.state.enabled ? '주 / 도' : '국가';
@@ -424,8 +396,10 @@ export function PickPushPanel() {
       {/* Export 버튼 */}
       <div style={{ display: 'flex', gap: '4px' }}>
         <button className="action-btn primary"
-          style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
-          onClick={handleExportPNG} disabled={isExporting}>
+          style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px',
+            opacity: selectionOnly ? 0.4 : 1,
+          }}
+          onClick={handleExportPNG} disabled={isExporting || selectionOnly}>
           <Download size={11} />
           {isExporting ? 'Exporting...' : 'PNG'}
         </button>
@@ -448,132 +422,6 @@ export function PickPushPanel() {
             : 'Pick 먼저'
           : '전체 화면'}
       </p>
-
-      {/* ── Terrain ── */}
-      <div style={{ height: 1, background: 'var(--glass-border)', marginTop: 4 }} />
-      <span style={{ ...labelStyle, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase' as const, fontSize: '11px' }}>Terrain</span>
-
-      <SliderControl label="Exaggeration" value={terrainExaggeration} min={1} max={5} step={0.1}
-        onChange={setTerrainExaggeration} displayValue={`${terrainExaggeration.toFixed(1)}×`} />
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-        <Toggle checked={hillshadeEnabled} onChange={setHillshadeEnabled} label="Hillshade" />
-        {hillshadeEnabled && (
-          <SliderControl
-            label="Shade"
-            value={hillshadeSharpness}
-            min={0.1} max={1.0} step={0.05}
-            onChange={setHillshadeSharpness}
-            displayValue={`${Math.round(hillshadeSharpness * 100)}%`}
-          />
-        )}
-      </div>
-
-      {/* Elevation Colors */}
-      <div ref={elevationBtnRef} style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-        <span style={{ ...labelStyle, fontSize: '11px' }}>Elevation Colors</span>
-        <div style={{ display: 'flex', gap: '6px' }}>
-          {ELEVATION_PRESETS.map((preset) => (
-            <button
-              key={preset.key}
-              title={`${preset.label} — 클릭하여 편집`}
-              onClick={() => {
-                setElevationPreset(preset.key);
-                setElevationColors(preset.hillshade);
-                // fixed 좌표 계산
-                if (elevationBtnRef.current) {
-                  const rect = elevationBtnRef.current.getBoundingClientRect();
-                  setModalPos({
-                    top: rect.top,
-                    right: window.innerWidth - rect.left + 8,
-                  });
-                }
-                setElevationModalOpen(true);
-              }}
-              style={{
-                flex: 1, height: 18,
-                border: `2px solid ${elevationPreset === preset.key ? '#59787f' : 'var(--glass-border)'}`,
-                background: `linear-gradient(to right, ${preset.gradientColors.join(', ')})`,
-                cursor: 'pointer', transition: 'border-color 0.12s', borderRadius: 0,
-              }}
-            />
-          ))}
-        </div>
-        <div style={{ display: 'flex', gap: '6px' }}>
-          {ELEVATION_PRESETS.map((p) => (
-            <span key={p.key} style={{ ...labelStyle, flex: 1, textAlign: 'center' as const, fontSize: '10px',
-              color: elevationPreset === p.key ? '#59787f' : 'var(--section-label-color)',
-              fontWeight: elevationPreset === p.key ? 600 : 400 }}>
-              {p.label}
-            </span>
-          ))}
-        </div>
-
-        {/* 모달 — fixed로 패널 왼쪽에 */}
-        {elevationModalOpen && (
-          <>
-            <div style={{ position: 'fixed', inset: 0, zIndex: 9998 }}
-              onClick={() => setElevationModalOpen(false)} />
-            <div style={{
-              position: 'fixed',
-              top: Math.min(modalPos.top, window.innerHeight - 340),
-              right: modalPos.right,
-              zIndex: 9999,
-              background: 'var(--glass-bg)',
-              border: '1px solid var(--glass-border)',
-              boxShadow: '0 8px 24px rgba(0,0,0,0.22)',
-              padding: '14px',
-              display: 'flex', flexDirection: 'column', gap: '10px',
-              minWidth: 200,
-            }}>
-              <span style={{ ...labelStyle, fontWeight: 600, fontSize: '11px',
-                letterSpacing: '0.06em', textTransform: 'uppercase' as const }}>
-                Elevation Colors
-              </span>
-
-              {([
-                { key: 'shadow'    as const, label: 'Shadow'    },
-                { key: 'highlight' as const, label: 'Highlight' },
-                { key: 'accent'    as const, label: 'Flatland'  },
-              ] as const).map(({ key, label }) => (
-                <div key={key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                  <span style={{ ...labelStyle, fontSize: '11px' }}>{label}</span>
-                  <input type="color"
-                    value={elevationColors[key]}
-                    onChange={(e) => setElevationColors({ ...elevationColors, [key]: e.target.value })}
-                    style={{ width: 32, height: 20, border: '1px solid var(--glass-border)',
-                      cursor: 'pointer', padding: 0, background: 'none' }}
-                  />
-                </div>
-              ))}
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ ...labelStyle, fontSize: '11px' }}>Light Direction</span>
-                  <span style={{ fontFamily: "'DM Mono', monospace", fontSize: '10px',
-                    color: 'var(--section-label-color)' }}>{illuminationAngle}°</span>
-                </div>
-                <input type="range" className="custom-slider"
-                  min={0} max={359} step={1} value={illuminationAngle}
-                  onChange={(e) => setIlluminationAngle(Number(e.target.value))}
-                  style={{ width: '100%' }}
-                />
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  {['N 0°', 'E 90°', 'S 180°', 'W 270°'].map((l) => (
-                    <span key={l} style={{ fontFamily: "'DM Mono', monospace", fontSize: '9px', opacity: 0.5 }}>{l}</span>
-                  ))}
-                </div>
-              </div>
-
-              <button className="action-btn primary"
-                style={{ width: '100%', justifyContent: 'center', display: 'flex' }}
-                onClick={() => setElevationModalOpen(false)}>
-                Done
-              </button>
-            </div>
-          </>
-        )}
-      </div>
 
     </SectionPanel>
   );

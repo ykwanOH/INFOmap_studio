@@ -12,7 +12,9 @@ import { HiResPanel } from './panels/HiResPanel';
 import { BorderMarkerPanel } from './panels/BorderMarkerPanel';
 import { PickPushPanel } from './panels/PickPushPanel';
 import { RouteLinePanel } from './panels/RouteLinePanel';
-import { FlyToAEPanel } from './panels/FlyToAEPanel';
+// FlyToAEPanel hidden from UI (code preserved)
+// import { FlyToAEPanel } from './panels/FlyToAEPanel';
+import { TerrainPanel } from './panels/TerrainPanel';
 import { ExtraLookPanel } from './panels/ExtraLookPanel';
 import { useMapStore } from '@/store/useMapStore';
 
@@ -165,11 +167,11 @@ export function ControlPanel() {
           <PanelSectionDivider />
 
           <PickPushPanel />
+          <TerrainPanel />
           <RouteLinePanel />
 
           <PanelSectionDivider />
 
-          <FlyToAEPanel />
           <ExtraLookPanel />
         </div>
       </div>

@@ -86,8 +86,9 @@ function applySchemeToMini(
   borderWidth?: number,
 ) {
   const cfg = SCHEME_CONFIGS[scheme];
-  const bColor = borderColor || cfg.border;
-  const bWidth = borderWidth ?? 1.05;  // 기본 1.5의 70%
+  // 미니맵 국경은 항상 rgb(220,220,220) — 가시성 최적
+  const bColor = 'rgb(220,220,220)';
+  const bWidth = (borderWidth ?? 1.5) * 0.7;  // 메인 굵기의 70%
   const bWidthExpr: mapboxgl.Expression = ['interpolate', ['linear'], ['zoom'],
     3, bWidth * 0.6, 6, bWidth, 10, bWidth * 1.4,
   ];
