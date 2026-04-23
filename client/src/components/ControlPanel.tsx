@@ -12,9 +12,9 @@ import { HiResPanel } from './panels/HiResPanel';
 import { BorderMarkerPanel } from './panels/BorderMarkerPanel';
 import { PickPushPanel } from './panels/PickPushPanel';
 import { RouteLinePanel } from './panels/RouteLinePanel';
-// FlyToAEPanel hidden from UI (code preserved)
-// import { FlyToAEPanel } from './panels/FlyToAEPanel';
 import { TerrainPanel } from './panels/TerrainPanel';
+// FlyToAEPanel — 기능 보존, 패널에서만 제거
+// import { FlyToAEPanel } from './panels/FlyToAEPanel';
 import { ExtraLookPanel } from './panels/ExtraLookPanel';
 import { useMapStore } from '@/store/useMapStore';
 
