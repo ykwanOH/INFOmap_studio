@@ -931,20 +931,23 @@ export default function MapView() {
         `inset 0 0 120px ${neonC},0.06);`,
       ].join(''));
 
-      // Road zoom offset: show roads 2 zoom levels earlier
-      const allLayers = map.getStyle()?.layers || [];
-      allLayers.forEach(l => {
-        const isRoad = l.id.startsWith('road-') || l.id.startsWith('bridge-') || l.id.startsWith('tunnel-');
-        if (!isRoad) return;
-        try {
-          // Get original minzoom from layer spec, default 0
-          const origMin = (l as any).minzoom ?? 0;
-          const newMin = Math.max(0, origMin - 2);
-          map.setLayerZoomRange(l.id, newMin, (l as any).maxzoom ?? 24);
-        } catch (_) {}
-        // Glow via blur
-        try { map.setPaintProperty(l.id, 'line-blur', 3); } catch (_) {}
-      });
+      // Digital 룩: 도로를 줌 6부터 표시 (applyRoadVisibility의 제한 무시)
+      {
+        const allLayers = map.getStyle()?.layers || [];
+        allLayers.forEach(l => {
+          const isRoad = l.id.startsWith('road-') || l.id.startsWith('bridge-') || l.id.startsWith('tunnel-');
+          if (!isRoad) return;
+          try {
+            // 모든 도로를 줌 6부터 표시 (expressway는 6, street/local은 8)
+            const tier = getRoadTier(l.id);
+            const newMin = tier === 'expressway' ? 6 : tier === 'street' ? 8 : 9;
+            map.setLayoutProperty(l.id, 'visibility', 'visible');
+            map.setLayerZoomRange(l.id, newMin, (l as any).maxzoom ?? 24);
+          } catch (_) {}
+          // Glow via blur
+          try { map.setPaintProperty(l.id, 'line-blur', 3); } catch (_) {}
+        });
+      }
     }
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1030,7 +1033,7 @@ export default function MapView() {
             }
           }
 
-          // 2순위: world_states.geojson point-in-polygon (US, IL, CA, 중동 등)
+          // 2순위: world_states.geojson point-in-polygon (US, CN, CA 등)
           const worldStates = worldStatesRef.current;
           if (worldStates) {
             const pt = point([lng, lat]);
@@ -1042,7 +1045,7 @@ export default function MapView() {
             }
             if (found && found.geometry) {
               const props = found.properties || {};
-              const stateId = `state-${props.iso_a2 || ''}-${props.hasc || props.name || pickId}`;
+              const stateId = `state-${props.iso_a2 || ''}-${props.name || pickId}`;
               addPickedFeature({
                 id: stateId,
                 sourceLayer: 'state',
@@ -1051,6 +1054,28 @@ export default function MapView() {
                 meta: { type: 'state', name: props.name_en || props.name, iso_a2: props.iso_a2 },
               } as any);
               return;
+            }
+          }
+
+          // 3순위: world_states에 없는 국가(중동, 일본 등) → countries.geojson 국가 단위 fallback
+          const countries = countriesRef.current;
+          if (countries) {
+            const pt = point([lng, lat]);
+            let found: GeoJSON.Feature | undefined;
+            for (const f of countries.features) {
+              if (!f.geometry) continue;
+              try { if (booleanPointInPolygon(pt, f as any)) { found = f; break; } }
+              catch { /* skip */ }
+            }
+            if (found && found.geometry) {
+              const props = found.properties || {};
+              addPickedFeature({
+                id: `state-country-${props.name || pickId}`,
+                sourceLayer: 'country',
+                fillColor: '#4a90d9', borderColor: '#2a5a9a', borderWidth: 1.5, floatHeight: 0,
+                geometry: found.geometry,
+                meta: { type: 'country-fallback', name: props.name },
+              } as any);
             }
           }
           return;
