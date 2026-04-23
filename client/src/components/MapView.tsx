@@ -18,31 +18,65 @@ mapboxgl.accessToken =
 const VECTOR_STYLE = 'mapbox://styles/mapbox/streets-v12';
 const SATELLITE_STYLE = 'mapbox://styles/mapbox/satellite-streets-v12';
 
-// BW Print stripe pattern generator
-// Returns {width, height, data} format that Mapbox addImage accepts reliably
+// BW Print stripe pattern generator — seamless tiling at any angle
+// 타일링 이음새 제거: 각도에 맞는 타일 크기를 수학적으로 계산
+// period 방향으로 타일이 완벽히 반복되도록 타일을 충분히 크게 설정
 function createStripeImageData(
   color: string, angleDeg: number, lineWidth: number, gap: number
 ): { width: number; height: number; data: Uint8Array } {
-  const period = Math.max(2, lineWidth + gap);
-  const size = Math.max(64, Math.ceil(period * 8));
-  const canvas = document.createElement('canvas');
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext('2d')!;
-  ctx.clearRect(0, 0, size, size);
+  const period = Math.max(2, lineWidth + (gap > 0 ? gap : 0));
   const rad = (angleDeg * Math.PI) / 180;
-  ctx.save();
-  ctx.translate(size / 2, size / 2);
-  ctx.rotate(rad);
+
+  // 이음새 없는 타일 크기 계산:
+  // sin/cos 값의 최소공배수 크기로 타일을 만들어 경계가 맞도록 함
+  const sinA = Math.abs(Math.sin(rad));
+  const cosA = Math.abs(Math.cos(rad));
+
+  let tileW: number, tileH: number;
+  if (sinA < 0.001) {
+    // 수평선 (0°, 180°)
+    tileW = period; tileH = period;
+  } else if (cosA < 0.001) {
+    // 수직선 (90°)
+    tileW = period; tileH = period;
+  } else {
+    // 일반 각도: 타일 크기 = period / sin × period / cos 의 LCM
+    // 실용적 계산: 타일 한 변에 period가 정수 번 들어가게
+    const wBase = period / sinA;
+    const hBase = period / cosA;
+    // 타일 크기를 period의 배수로 반올림해서 seamless 보장
+    const repeats = Math.max(2, Math.round(Math.sqrt(wBase * hBase) / period));
+    tileW = Math.round(wBase * repeats);
+    tileH = Math.round(hBase * repeats);
+    // 최대 512px 제한 (VRAM 절약)
+    const scale = Math.min(1, 512 / Math.max(tileW, tileH));
+    tileW = Math.max(64, Math.round(tileW * scale));
+    tileH = Math.max(64, Math.round(tileH * scale));
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = tileW;
+  canvas.height = tileH;
+  const ctx = canvas.getContext('2d')!;
+
+  // 흰 배경 (수계 기반색)
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(0, 0, tileW, tileH);
+
+  // 줄무늬: 타일 전체를 2배 크기로 그려서 경계 처리
   ctx.fillStyle = color;
-  const diag = size * 1.5;
+  const diag = Math.sqrt(tileW * tileW + tileH * tileH) * 1.5;
+  ctx.save();
+  ctx.translate(tileW / 2, tileH / 2);
+  ctx.rotate(rad);
   for (let x = -diag; x <= diag; x += period) {
-    ctx.fillRect(x, -diag, Math.max(1, lineWidth), diag * 2);
+    const w = gap === 0 ? period : Math.max(1, lineWidth);
+    ctx.fillRect(x, -diag, w, diag * 2);
   }
   ctx.restore();
-  // Extract raw RGBA — avoids Mapbox pixelRatio mismatch error
-  const raw = ctx.getImageData(0, 0, size, size);
-  return { width: size, height: size, data: new Uint8Array(raw.data.buffer) };
+
+  const raw = ctx.getImageData(0, 0, tileW, tileH);
+  return { width: tileW, height: tileH, data: new Uint8Array(raw.data.buffer) };
 }
 
 // Vintage color palettes
@@ -132,15 +166,19 @@ export default function MapView() {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const countriesRef = useRef<GeoJSON.FeatureCollection | null>(null);
-  // countries.geojson 최초 1회 로드
+  const worldStatesRef = useRef<GeoJSON.FeatureCollection | null>(null);
+
+  // countries.geojson + world_states.geojson 최초 1회 로드
   useEffect(() => {
     fetch('/countries.geojson')
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
-      .then(data => {
-        countriesRef.current = data;
-        console.log(`[Pick] countries.geojson loaded: ${data.features?.length} features`);
-      })
+      .then(data => { countriesRef.current = data; })
       .catch(e => console.error('[Pick] countries.geojson load FAILED:', e));
+
+    fetch('/world_states.geojson')
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+      .then(data => { worldStatesRef.current = data; })
+      .catch(e => console.error('[Pick] world_states.geojson load FAILED:', e));
   }, []);
   const styleLoadedRef = useRef(false);
 
@@ -830,14 +868,16 @@ export default function MapView() {
       const stripeImg = createStripeImageData(bwStripeColor, bwStripeAngle, bwStripeWidth, bwStripeGap);
       if (map.hasImage('bw-stripe')) map.removeImage('bw-stripe');
       map.addImage('bw-stripe', stripeImg);
-      ['water', 'water-shadow'].forEach(id => {
+      // 모든 water fill 레이어에 패턴 적용 (줌별 소실 방지)
+      const allLy = map.getStyle()?.layers || [];
+      for (const ly of allLy) {
+        const isWaterFill = ly.type === 'fill' && (ly.id.includes('water') || ly.id === 'water-shadow');
+        if (!isWaterFill) continue;
         try {
-          if (map.getLayer(id)) {
-            map.setPaintProperty(id, 'fill-color', '#FFFFFF');
-            map.setPaintProperty(id, 'fill-pattern', 'bw-stripe');
-          }
+          map.setPaintProperty(ly.id, 'fill-color', '#FFFFFF');
+          map.setPaintProperty(ly.id, 'fill-pattern', 'bw-stripe');
         } catch (_) {}
-      });
+      }
     }
 
     // ── VINTAGE ───────────────────────────────────────────────────────────
@@ -959,11 +999,10 @@ export default function MapView() {
 
         if (unit === 'state') {
           // ── 주/도 단위 ──
-          // 한국: sgg(시군구) 또는 sido(광역)
+          // 1순위: 한국 GeoJSON (korea-sgg-fill / korea-sido-fill)
           const koFeats = map.queryRenderedFeatures(e.point, { layers: ['korea-sgg-fill', 'korea-sido-fill'] });
           if (koFeats.length > 0) {
             const feat = koFeats[0];
-            // zoom 7 이상이면 sgg(시군구), 미만이면 sido(광역)
             const usesSgg = map.getZoom() >= 7;
             if (usesSgg) {
               const sgg = feat.properties?.sgg as string | undefined;
@@ -990,31 +1029,29 @@ export default function MapView() {
               return;
             }
           }
-          // 한국 외: admin-1-fill-hit fill 레이어로 geometry 획득
-          // admin-1-boundary(line)는 geometry가 부정확하므로 fill 레이어 우선 조회
-          const fillFeats = map.queryRenderedFeatures(e.point, { layers: ['admin-1-fill-hit'] });
-          const fillTarget = fillFeats.find(f => f.geometry && (f.geometry.type === 'Polygon' || f.geometry.type === 'MultiPolygon')) || null;
-          if (fillTarget?.geometry) {
-            const props = fillTarget.properties || {};
-            addPickedFeature({
-              id: `admin1-${fillTarget.id ?? props.name_en ?? pickId}`,
-              sourceLayer: 'admin',
-              fillColor: '#4a90d9', borderColor: '#2a5a9a', borderWidth: 1.5, floatHeight: 0,
-              geometry: fillTarget.geometry,
-              meta: { type: 'admin1', name: props.name_en || props.name },
-            } as any);
-            return;
-          }
-          // fallback: line 레이어에서 시도
-          const lineFeats = map.queryRenderedFeatures(e.point, { layers: ['admin-1-boundary'] });
-          const lineTarget = lineFeats[0] || null;
-          if (lineTarget?.geometry) {
-            addPickedFeature({
-              id: String(lineTarget.id ?? pickId),
-              sourceLayer: lineTarget.layer?.['source-layer'] || '',
-              fillColor: '#4a90d9', borderColor: '#2a5a9a', borderWidth: 1.5, floatHeight: 0,
-              geometry: lineTarget.geometry,
-            } as any);
+
+          // 2순위: world_states.geojson point-in-polygon (US, IL, CA, 중동 등)
+          const worldStates = worldStatesRef.current;
+          if (worldStates) {
+            const pt = point([lng, lat]);
+            let found: GeoJSON.Feature | undefined;
+            for (const f of worldStates.features) {
+              if (!f.geometry) continue;
+              try { if (booleanPointInPolygon(pt, f as any)) { found = f; break; } }
+              catch { /* skip */ }
+            }
+            if (found && found.geometry) {
+              const props = found.properties || {};
+              const stateId = `state-${props.iso_a2 || ''}-${props.hasc || props.name || pickId}`;
+              addPickedFeature({
+                id: stateId,
+                sourceLayer: 'state',
+                fillColor: '#4a90d9', borderColor: '#2a5a9a', borderWidth: 1.5, floatHeight: 0,
+                geometry: found.geometry,
+                meta: { type: 'state', name: props.name_en || props.name, iso_a2: props.iso_a2 },
+              } as any);
+              return;
+            }
           }
           return;
         }

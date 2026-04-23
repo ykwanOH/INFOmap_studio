@@ -90,7 +90,7 @@ export function ExtraLookPanel() {
     setExtraLook(extraLook === key ? null : key);
   };
 
-  const isSolid = bwStripeWidth >= bwStripeGap;
+  const isSolid = bwStripeGap === 0 || bwStripeWidth >= bwStripeGap;
 
   return (
     <SectionPanel sectionKey="extraLook" title="Extra Look">
@@ -143,7 +143,7 @@ export function ExtraLookPanel() {
           <SliderControl
             label="간격"
             value={bwStripeGap}
-            min={1} max={30} step={1}
+            min={0} max={30} step={1}
             onChange={setBwStripeGap}
             displayValue={`${bwStripeGap}px`}
           />
