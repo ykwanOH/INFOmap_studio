@@ -110,19 +110,9 @@ function applySchemeToMini(
     } catch (_) {}
   }
 
-  // 대지-수계 경계 anti-aliasing 완화
-  const OUTLINE_ID = 'mini-land-outline';
+  // mini-land-outline 제거 (대지 경계 1px 보더 없앰)
   try {
-    if (!map.getLayer(OUTLINE_ID)) {
-      map.addLayer({
-        id: OUTLINE_ID, type: 'line', source: 'composite', 'source-layer': 'water',
-        layout: { 'line-join': 'round', 'line-cap': 'round' },
-        paint: { 'line-color': 'rgb(200,200,200)', 'line-width': 1, 'line-opacity': 1 },
-      });
-    } else {
-      map.setPaintProperty(OUTLINE_ID, 'line-color', 'rgb(200,200,200)');
-      map.setPaintProperty(OUTLINE_ID, 'line-width', 1);
-    }
+    if (map.getLayer('mini-land-outline')) map.removeLayer('mini-land-outline');
   } catch (_) {}
 }
 

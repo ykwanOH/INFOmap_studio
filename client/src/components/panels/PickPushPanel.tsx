@@ -36,7 +36,7 @@ export function PickPushPanel() {
     currentGroupId,
     updatePickedFeature,
     updateCurrentGroupHeight,
-    commitGroup,
+    updateCurrentGroupProps,
     clearPickedFeatures,
     resetAllPicks,
     mapInstance,
@@ -53,6 +53,10 @@ export function PickPushPanel() {
   const currentGroupFeatures = pickedFeatures.filter(f => (f as any).groupId === currentGroupId);
   const lastPicked = pickedFeatures[pickedFeatures.length - 1] ?? null;
   const currentGroupHeight = currentGroupFeatures[0]?.floatHeight ?? 0;
+
+  const updateCurrentGroup = (updates: Partial<import('@/store/useMapStore').PickedFeature>) => {
+    updateCurrentGroupProps(updates);
+  };
 
   const getFeatureName = (f: typeof lastPicked) => {
     if (!f) return '';
@@ -330,14 +334,7 @@ export function PickPushPanel() {
                 : 'Off'
             }
           />
-          <button
-            className="action-btn primary"
-            style={{ fontSize: '11px', padding: '4px 0' }}
-            onClick={() => commitGroup()}
-            title="현재 높이 확정 후 새 세트 시작"
-          >
-            ✓ Apply &amp; New Set
-          </button>
+
         </div>
       )}
 
@@ -360,13 +357,13 @@ export function PickPushPanel() {
       {/* 마지막 선택 편집 */}
       {lastPicked && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingTop: '8px', borderTop: '1px solid var(--glass-border)' }}>
-          <p style={{ ...labelStyle, fontSize: '11px', color: 'var(--muted-foreground)' }}>마지막 선택 편집</p>
+          <p style={{ ...labelStyle, fontSize: '11px', color: 'var(--muted-foreground)' }}>현재 세트 편집 ({currentGroupFeatures.length}개)</p>
           <ColorPicker label="Fill Color" color={lastPicked.fillColor}
-            onChange={(c) => updatePickedFeature(lastPicked.id, { fillColor: c })} />
+            onChange={(c) => updateCurrentGroup({ fillColor: c })} />
           <ColorPicker label="Border Color" color={lastPicked.borderColor}
-            onChange={(c) => updatePickedFeature(lastPicked.id, { borderColor: c })} />
+            onChange={(c) => updateCurrentGroup({ borderColor: c })} />
           <SliderControl label="Border Width" value={lastPicked.borderWidth} min={0} max={5} step={0.1}
-            onChange={(v) => updatePickedFeature(lastPicked.id, { borderWidth: v })}
+            onChange={(v) => updateCurrentGroup({ borderWidth: v })}
             displayValue={`${lastPicked.borderWidth.toFixed(1)}px`} />
         </div>
       )}

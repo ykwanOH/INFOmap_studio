@@ -132,10 +132,12 @@ export interface MapStoreState {
   setPickUnitMode: (v: PickUnitMode) => void;
   pickedFeatures: PickedFeature[];
   currentGroupId: number;           // 현재 진행 중인 세트 번호
+  groupModified: boolean;           // 현재 세트 컨트롤이 수정되었는지
   addPickedFeature: (f: PickedFeature) => void;
   updatePickedFeature: (id: string | number, updates: Partial<PickedFeature>) => void;
   updateCurrentGroupHeight: (height: number) => void;  // 현재 세트 전체 높이 변경
-  commitGroup: () => void;           // Float/Extrude 적용 → 새 세트 시작
+  updateCurrentGroupProps: (updates: Partial<PickedFeature>) => void;  // 현재 세트 전체 속성 변경
+  commitGroup: () => void;           // 새 세트 시작
   clearPickedFeatures: () => void;
   resetAllPicks: () => void;
 
@@ -353,18 +355,31 @@ export const useMapStore = create<MapStoreState>((set, get) => ({
   setPickUnitMode: (v) => set({ pickUnitMode: v }),
   pickedFeatures: [],
   currentGroupId: 0,
+  groupModified: false,
   addPickedFeature: (f) =>
     set((state) => {
+      // 현재 세트가 수정된 적 있으면 → 새 세트 자동 시작
+      const groupId = state.groupModified
+        ? state.currentGroupId + 1
+        : state.currentGroupId;
+      const newCurrentGroupId = state.groupModified ? groupId : state.currentGroupId;
+
       // 같은 그룹 내 동일 id → 토글 해제
       const exists = state.pickedFeatures.find(
-        (p) => p.id === f.id && p.groupId === state.currentGroupId
+        (p) => p.id === f.id && p.groupId === newCurrentGroupId
       );
       if (exists) return {
         pickedFeatures: state.pickedFeatures.filter(
-          (p) => !(p.id === f.id && p.groupId === state.currentGroupId)
-        )
+          (p) => !(p.id === f.id && p.groupId === newCurrentGroupId)
+        ),
+        currentGroupId: newCurrentGroupId,
+        groupModified: false,
       };
-      return { pickedFeatures: [...state.pickedFeatures, { ...f, groupId: state.currentGroupId }] };
+      return {
+        pickedFeatures: [...state.pickedFeatures, { ...f, groupId: newCurrentGroupId }],
+        currentGroupId: newCurrentGroupId,
+        groupModified: false,
+      };
     }),
   updatePickedFeature: (id, updates) =>
     set((state) => ({
@@ -377,11 +392,19 @@ export const useMapStore = create<MapStoreState>((set, get) => ({
       pickedFeatures: state.pickedFeatures.map((f) =>
         f.groupId === state.currentGroupId ? { ...f, floatHeight: height } : f
       ),
+      groupModified: true,
+    })),
+  updateCurrentGroupProps: (updates) =>
+    set((state) => ({
+      pickedFeatures: state.pickedFeatures.map((f) =>
+        f.groupId === state.currentGroupId ? { ...f, ...updates } : f
+      ),
+      groupModified: true,
     })),
   commitGroup: () =>
     set((state) => ({ currentGroupId: state.currentGroupId + 1 })),
-  clearPickedFeatures: () => set({ pickedFeatures: [], currentGroupId: 0 }),
-  resetAllPicks: () => set({ pickedFeatures: [], pickMode: false, currentGroupId: 0 }),
+  clearPickedFeatures: () => set({ pickedFeatures: [], currentGroupId: 0, groupModified: false }),
+  resetAllPicks: () => set({ pickedFeatures: [], pickMode: false, currentGroupId: 0, groupModified: false }),
 
   // ── Route Line ──
   routes: [],
