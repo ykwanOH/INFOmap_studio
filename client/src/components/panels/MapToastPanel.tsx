@@ -16,7 +16,7 @@ if (!mapboxgl.accessToken) {
   mapboxgl.accessToken = (import.meta.env.VITE_MAPBOX_TOKEN as string) || '';
 }
 
-const OUTPUT_SIZE = 384;
+const OUTPUT_SIZE = 1080;
 const BORDER_COLOR = 'rgb(200,200,200)';
 
 const labelStyle = {
@@ -193,37 +193,31 @@ export function MapToastPanel() {
     if (!mini || !miniLoadedRef.current || capturing) return;
     setCapturing(true);
 
-    const mult = 4;  // ×4 = 1536px → 384px 다운샘플
-    const hiSize = OUTPUT_SIZE * mult;       // 768 or 1536
+    // 컨테이너 크기 기준으로 pixelRatio 계산 → 1080px 직접 렌더
+    const containerSize = miniContainerRef.current?.offsetWidth ?? 270;
+    const mult = Math.max(1, Math.ceil(OUTPUT_SIZE / containerSize));
     const origRatio = (mini as any).getPixelRatio?.() ?? window.devicePixelRatio ?? 1;
 
-    // 1. pixelRatio 올려서 고해상도 렌더
+    // 1. pixelRatio 올려서 1080px급 렌더
     try { (mini as any).setPixelRatio(origRatio * mult); } catch (_) {}
 
     mini.once('idle', () => {
       try {
-        const src = mini.getCanvas();  // 업스케일된 캔버스
+        const src = mini.getCanvas();
 
-        // 2. 중앙 hiSize×hiSize 영역 crop
-        const cropX = Math.max(0, (src.width  - hiSize) / 2);
-        const cropY = Math.max(0, (src.height - hiSize) / 2);
-        const cropW = Math.min(hiSize, src.width);
-        const cropH = Math.min(hiSize, src.height);
+        // 2. 중앙 정사각형 crop
+        const cropSize = Math.min(src.width, src.height);
+        const cropX = Math.floor((src.width  - cropSize) / 2);
+        const cropY = Math.floor((src.height - cropSize) / 2);
 
-        const cropped = document.createElement('canvas');
-        cropped.width  = cropW;
-        cropped.height = cropH;
-        const cCtx = cropped.getContext('2d')!;
-        cCtx.drawImage(src, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
-
-        // 3. 최종 384×384 출력 캔버스
+        // 3. OUTPUT_SIZE(1080)×OUTPUT_SIZE 출력 — 다운샘플 없음
         const out = document.createElement('canvas');
         out.width  = OUTPUT_SIZE;
         out.height = OUTPUT_SIZE;
         const oCtx = out.getContext('2d')!;
-        oCtx.imageSmoothingEnabled  = true;
-        oCtx.imageSmoothingQuality  = 'high';
-        oCtx.drawImage(cropped, 0, 0, OUTPUT_SIZE, OUTPUT_SIZE);
+        oCtx.imageSmoothingEnabled = true;
+        oCtx.imageSmoothingQuality = 'high';
+        oCtx.drawImage(src, cropX, cropY, cropSize, cropSize, 0, 0, OUTPUT_SIZE, OUTPUT_SIZE);
 
         // 4. 저장
         out.toBlob((blob) => {
@@ -376,9 +370,9 @@ export function MapToastPanel() {
 
         <p style={{ ...labelStyle, textAlign: 'center', fontSize: '10px', color: 'var(--muted-foreground)', margin: 0 }}>
           {capturing
-            ? `1536px 렌더 중…`
+            ? `${OUTPUT_SIZE}px 렌더 중…`
             : syncing
-              ? `클릭 → 1536px 캡처 → ${OUTPUT_SIZE}px 저장`
+              ? `클릭 → ${OUTPUT_SIZE}×${OUTPUT_SIZE}px 캡처`
               : `${cfg.labelKo} · Click to activate`}
         </p>
       </div>

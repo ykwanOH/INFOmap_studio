@@ -55,6 +55,7 @@ export interface PickedFeature {
   borderWidth: number;
   floatHeight: number;   // floating/extrude 공유 높이 (m)
   geometry?: GeoJSON.Geometry;
+  groupId: number;       // 세트 번호: Float/Extrude 적용 시 새 그룹 시작
 }
 
 export interface RoutePoint {
@@ -130,8 +131,11 @@ export interface MapStoreState {
   pickUnitMode: PickUnitMode;
   setPickUnitMode: (v: PickUnitMode) => void;
   pickedFeatures: PickedFeature[];
+  currentGroupId: number;           // 현재 진행 중인 세트 번호
   addPickedFeature: (f: PickedFeature) => void;
   updatePickedFeature: (id: string | number, updates: Partial<PickedFeature>) => void;
+  updateCurrentGroupHeight: (height: number) => void;  // 현재 세트 전체 높이 변경
+  commitGroup: () => void;           // Float/Extrude 적용 → 새 세트 시작
   clearPickedFeatures: () => void;
   resetAllPicks: () => void;
 
@@ -348,11 +352,19 @@ export const useMapStore = create<MapStoreState>((set, get) => ({
   pickUnitMode: 'country',
   setPickUnitMode: (v) => set({ pickUnitMode: v }),
   pickedFeatures: [],
+  currentGroupId: 0,
   addPickedFeature: (f) =>
     set((state) => {
-      const exists = state.pickedFeatures.find((p) => p.id === f.id);
-      if (exists) return { pickedFeatures: state.pickedFeatures.filter((p) => p.id !== f.id) };
-      return { pickedFeatures: [...state.pickedFeatures, f] };
+      // 같은 그룹 내 동일 id → 토글 해제
+      const exists = state.pickedFeatures.find(
+        (p) => p.id === f.id && p.groupId === state.currentGroupId
+      );
+      if (exists) return {
+        pickedFeatures: state.pickedFeatures.filter(
+          (p) => !(p.id === f.id && p.groupId === state.currentGroupId)
+        )
+      };
+      return { pickedFeatures: [...state.pickedFeatures, { ...f, groupId: state.currentGroupId }] };
     }),
   updatePickedFeature: (id, updates) =>
     set((state) => ({
@@ -360,8 +372,16 @@ export const useMapStore = create<MapStoreState>((set, get) => ({
         f.id === id ? { ...f, ...updates } : f
       ),
     })),
-  clearPickedFeatures: () => set({ pickedFeatures: [] }),
-  resetAllPicks: () => set({ pickedFeatures: [], pickMode: false }),
+  updateCurrentGroupHeight: (height) =>
+    set((state) => ({
+      pickedFeatures: state.pickedFeatures.map((f) =>
+        f.groupId === state.currentGroupId ? { ...f, floatHeight: height } : f
+      ),
+    })),
+  commitGroup: () =>
+    set((state) => ({ currentGroupId: state.currentGroupId + 1 })),
+  clearPickedFeatures: () => set({ pickedFeatures: [], currentGroupId: 0 }),
+  resetAllPicks: () => set({ pickedFeatures: [], pickMode: false, currentGroupId: 0 }),
 
   // ── Route Line ──
   routes: [],

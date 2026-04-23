@@ -992,6 +992,7 @@ export default function MapView() {
                 id: `country-${props.iso_n3 || props.name || pickId}`,
                 sourceLayer: 'country',
                 fillColor: '#4a90d9', borderColor: '#2a5a9a', borderWidth: 1.5, floatHeight: 0,
+                groupId: store.currentGroupId,
                 geometry: found.geometry,
                 meta: { type: 'country', name: props.name, iso_n3: props.iso_n3 },
               } as any);
@@ -1014,6 +1015,7 @@ export default function MapView() {
                   id: `korea-sgg-${sgg}`,
                   sourceLayer: 'korea-sgg',
                   fillColor: '#4a90d9', borderColor: '#2a5a9a', borderWidth: 1.5, floatHeight: 0,
+                  groupId: store.currentGroupId,
                   geometry: feat.geometry,
                   meta: { type: 'korea-sgg', sgg, sggnm: feat.properties?.sggnm, sidonm: feat.properties?.sidonm },
                 } as any);
@@ -1026,6 +1028,7 @@ export default function MapView() {
                 id: `korea-sido-${sido}`,
                 sourceLayer: 'korea-sido',
                 fillColor: '#4a90d9', borderColor: '#2a5a9a', borderWidth: 1.5, floatHeight: 0,
+                groupId: store.currentGroupId,
                 geometry: feat.geometry,
                 meta: { type: 'korea-sido', sido, sidonm: feat.properties?.sidonm },
               } as any);
@@ -1050,6 +1053,7 @@ export default function MapView() {
                 id: stateId,
                 sourceLayer: 'state',
                 fillColor: '#4a90d9', borderColor: '#2a5a9a', borderWidth: 1.5, floatHeight: 0,
+                groupId: store.currentGroupId,
                 geometry: found.geometry,
                 meta: { type: 'state', name: props.name_en || props.name, iso_a2: props.iso_a2 },
               } as any);
@@ -1073,6 +1077,7 @@ export default function MapView() {
                 id: `state-country-${props.name || pickId}`,
                 sourceLayer: 'country',
                 fillColor: '#4a90d9', borderColor: '#2a5a9a', borderWidth: 1.5, floatHeight: 0,
+                groupId: store.currentGroupId,
                 geometry: found.geometry,
                 meta: { type: 'country-fallback', name: props.name },
               } as any);

@@ -33,7 +33,10 @@ export function PickPushPanel() {
     pickDisplayMode, setPickDisplayMode,
     pickUnitMode, setPickUnitMode,
     pickedFeatures,
+    currentGroupId,
     updatePickedFeature,
+    updateCurrentGroupHeight,
+    commitGroup,
     clearPickedFeatures,
     resetAllPicks,
     mapInstance,
@@ -47,7 +50,9 @@ export function PickPushPanel() {
   const pickUnit = borders.district.enabled ? '구 / 시군'
     : borders.state.enabled ? '주 / 도' : '국가';
 
+  const currentGroupFeatures = pickedFeatures.filter(f => (f as any).groupId === currentGroupId);
   const lastPicked = pickedFeatures[pickedFeatures.length - 1] ?? null;
+  const currentGroupHeight = currentGroupFeatures[0]?.floatHeight ?? 0;
 
   const getFeatureName = (f: typeof lastPicked) => {
     if (!f) return '';
@@ -309,21 +314,31 @@ export function PickPushPanel() {
         </div>
       </div>
 
-      {/* 높이 슬라이더 (float/extrude 공유) */}
-      {lastPicked && (
-        <SliderControl
-          label={pickDisplayMode === 'floating' ? 'Float Height' : 'Extrude Height'}
-          value={lastPicked.floatHeight ?? 0}
-          min={0}
-          max={200000}
-          step={2000}
-          onChange={(v) => updatePickedFeature(lastPicked.id, { floatHeight: v })}
-          displayValue={
-            (lastPicked.floatHeight ?? 0) > 0
-              ? `${((lastPicked.floatHeight ?? 0) / 1000).toFixed(0)}km`
-              : 'Off'
-          }
-        />
+      {/* 높이 슬라이더 — 현재 세트 전체에 동시 적용 */}
+      {currentGroupFeatures.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <SliderControl
+            label={pickDisplayMode === 'floating' ? 'Float Height' : 'Extrude Height'}
+            value={currentGroupHeight}
+            min={0}
+            max={200000}
+            step={2000}
+            onChange={(v) => updateCurrentGroupHeight(v)}
+            displayValue={
+              currentGroupHeight > 0
+                ? `${(currentGroupHeight / 1000).toFixed(0)}km`
+                : 'Off'
+            }
+          />
+          <button
+            className="action-btn primary"
+            style={{ fontSize: '11px', padding: '4px 0' }}
+            onClick={() => commitGroup()}
+            title="현재 높이 확정 후 새 세트 시작"
+          >
+            ✓ Apply &amp; New Set
+          </button>
+        </div>
       )}
 
       {/* 선택된 feature 목록 */}
