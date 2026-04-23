@@ -1,5 +1,5 @@
 /**
- * MACRO Map Studio — Pick & Export Panel
+ * INFOmap Studio — Pick & Export Panel
  *
  * - Pick 버튼으로 나라 선택
  * - Floating / Extrude 모드 토글 (공유 높이 슬라이더)
@@ -176,7 +176,7 @@ export function PickPushPanel() {
             });
             fCtx.drawImage(maskCanvas2, 0, 0);
             const link = document.createElement('a');
-            link.download = `macro_pick_${exportResolution}_${Date.now()}.png`;
+            link.download = `infomap_pick_${exportResolution}_${Date.now()}.png`;
             link.href = finalCanvas.toDataURL('image/png');
             link.click();
           } else {
@@ -190,7 +190,7 @@ export function PickPushPanel() {
               }
             }
             const link = document.createElement('a');
-            link.download = `macro_map_${exportResolution}_${Date.now()}.png`;
+            link.download = `infomap_map_${exportResolution}_${Date.now()}.png`;
             link.href = out.toDataURL('image/png');
             link.click();
           }
@@ -237,13 +237,13 @@ export function PickPushPanel() {
 
     const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${resW} ${resH}" width="${resW}" height="${resH}">
-  <!-- MACRO Map Studio · Pick & Export · ${new Date().toISOString()} -->
+  <!-- INFOmap Studio · Pick & Export · ${new Date().toISOString()} -->
   ${svgParts.join('\n  ')}
 </svg>`;
     const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.download = `macro_pick_${exportResolution}_${Date.now()}.svg`;
+    link.download = `infomap_pick_${exportResolution}_${Date.now()}.svg`;
     link.href = url;
     link.click();
     URL.revokeObjectURL(url);

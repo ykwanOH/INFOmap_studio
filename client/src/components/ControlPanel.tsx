@@ -1,7 +1,7 @@
 /**
- * MACRO Map Studio — Control Panel
+ * INFOmap Studio — Control Panel
  * Right-side panel matching sibling app (3D Miniature Map Studio) design exactly.
- * Header: grid icon + "MAP STUDIO" title + hamburger icon (toggles panel visibility)
+ * Header: grid icon + "INFO MAP STUDIO" title + hamburger icon (toggles panel visibility)
  * Panel width: 220px, no border-radius, warm off-white bg
  */
 
@@ -109,7 +109,7 @@ export function ControlPanel() {
           transition: 'transform 0.28s cubic-bezier(0.4,0,0.2,1)',
         }}
       >
-        {/* Header — matches sibling: [grid icon] MAP STUDIO [≡] */}
+        {/* Header — [grid icon] INFO MAP STUDIO [≡] */}
         <div style={{
           padding: '13px 14px 12px',
           borderBottom: '1px solid var(--glass-border)',
@@ -132,7 +132,7 @@ export function ControlPanel() {
               color: 'var(--foreground)',
               lineHeight: 1,
             }}>
-              MAP STUDIO
+              INFO MAP STUDIO
             </span>
           </div>
           {/* Hamburger: 클릭 시 패널 숨김 */}

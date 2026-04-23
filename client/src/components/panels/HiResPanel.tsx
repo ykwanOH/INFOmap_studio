@@ -1,5 +1,5 @@
 /**
- * MACRO Map Studio — Hi-Res Capture Panel (v13 · GL pixelRatio)
+ * INFOmap Studio — Hi-Res Capture Panel (v13 · GL pixelRatio)
  *
  * ── Static API 완전 폐기 ──
  * 이유: 커스텀 컬러(landmass/hydro/border 등)를 반영 불가
@@ -94,7 +94,7 @@ export function HiResPanel() {
         const url = URL.createObjectURL(blob);
         const a = Object.assign(document.createElement('a'), {
           href: url,
-          download: `macro_hires_${outW}x${outH}_${Date.now()}.png`,
+          download: `infomap_hires_${outW}x${outH}_${Date.now()}.png`,
         });
         document.body.appendChild(a); a.click();
         document.body.removeChild(a);
