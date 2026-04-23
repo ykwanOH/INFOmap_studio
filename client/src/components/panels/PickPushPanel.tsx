@@ -206,7 +206,16 @@ export function PickPushPanel() {
 
   const handleExportSVG = () => {
     if (pickedFeatures.length === 0 || !mapInstance) return;
-    const src = mapInstance.getCanvas();
+
+    // project()는 CSS픽셀 기준 반환 (devicePixelRatio 무관)
+    // PNG export: drawImage(canvas → resW×resH) = CSS픽셀 비율과 동일
+    // SVG: 동일한 비율로 변환해야 PNG 위에 정확히 오버레이 가능
+    const container = mapInstance.getContainer();
+    const cssW = container.clientWidth;
+    const cssH = container.clientHeight;
+    const scaleX = resW / cssW;
+    const scaleY = resH / cssH;
+
     const svgParts = pickedFeatures.map((f) => {
       const geo = (f as any).geometry as GeoJSON.Geometry | undefined;
       if (!geo) return '';
@@ -218,13 +227,14 @@ export function PickPushPanel() {
       const d = rings.map((ring) => {
         return ring.map((coord, i) => {
           const pt = mapInstance.project([coord[0], coord[1]]);
-          const px = (pt.x / src.width) * resW;
-          const py = (pt.y / src.height) * resH;
-          return `${i === 0 ? 'M' : 'L'}${px.toFixed(1)},${py.toFixed(1)}`;
+          const px = (pt.x * scaleX).toFixed(2);
+          const py = (pt.y * scaleY).toFixed(2);
+          return `${i === 0 ? 'M' : 'L'}${px},${py}`;
         }).join(' ') + ' Z';
       }).join(' ');
       return `<path d="${d}" fill="${f.fillColor}" fill-opacity="0.7" stroke="${f.borderColor}" stroke-width="${f.borderWidth}" fill-rule="evenodd" />`;
     }).filter(Boolean);
+
     const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${resW} ${resH}" width="${resW}" height="${resH}">
   <!-- MACRO Map Studio · Pick & Export · ${new Date().toISOString()} -->

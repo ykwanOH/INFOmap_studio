@@ -975,15 +975,30 @@ export default function MapView() {
               return;
             }
           }
-          // 한국 외: Mapbox admin_1 레이어
-          const adminFeats = map.queryRenderedFeatures(e.point, { layers: ['admin-1-boundary', 'macro-admin-state'] });
-          const adminTarget = adminFeats[0] || null;
-          if (adminTarget?.geometry) {
+          // 한국 외: admin-1-fill-hit fill 레이어로 geometry 획득
+          // admin-1-boundary(line)는 geometry가 부정확하므로 fill 레이어 우선 조회
+          const fillFeats = map.queryRenderedFeatures(e.point, { layers: ['admin-1-fill-hit'] });
+          const fillTarget = fillFeats.find(f => f.geometry && (f.geometry.type === 'Polygon' || f.geometry.type === 'MultiPolygon')) || null;
+          if (fillTarget?.geometry) {
+            const props = fillTarget.properties || {};
             addPickedFeature({
-              id: String(adminTarget.id ?? pickId),
-              sourceLayer: adminTarget.layer?.['source-layer'] || '',
+              id: `admin1-${fillTarget.id ?? props.name_en ?? pickId}`,
+              sourceLayer: 'admin',
               fillColor: '#4a90d9', borderColor: '#2a5a9a', borderWidth: 1.5, floatHeight: 0,
-              geometry: adminTarget.geometry,
+              geometry: fillTarget.geometry,
+              meta: { type: 'admin1', name: props.name_en || props.name },
+            } as any);
+            return;
+          }
+          // fallback: line 레이어에서 시도
+          const lineFeats = map.queryRenderedFeatures(e.point, { layers: ['admin-1-boundary'] });
+          const lineTarget = lineFeats[0] || null;
+          if (lineTarget?.geometry) {
+            addPickedFeature({
+              id: String(lineTarget.id ?? pickId),
+              sourceLayer: lineTarget.layer?.['source-layer'] || '',
+              fillColor: '#4a90d9', borderColor: '#2a5a9a', borderWidth: 1.5, floatHeight: 0,
+              geometry: lineTarget.geometry,
             } as any);
           }
           return;
@@ -1474,6 +1489,22 @@ function initCustomLayers(map: mapboxgl.Map) {
   // ── 한국 행정구역 GeoJSON (sido/sgg 분리 로드) ──────────────────────────
   // korea_sido.geojson: 17개 광역 (읍면동→sido dissolve)
   // korea_sgg.geojson:  252개 시군구 (읍면동→sgg dissolve)
+
+  // ── 해외 admin-1 pick용 투명 fill 레이어 ──────────────────────────────
+  // admin-1-boundary는 line이라 geometry를 못 가져오므로
+  // composite/admin fill 레이어를 별도로 추가하여 queryRenderedFeatures로 geometry 획득
+  if (!map.getLayer('admin-1-fill-hit')) {
+    try {
+      map.addLayer({
+        id: 'admin-1-fill-hit',
+        type: 'fill',
+        source: 'composite',
+        'source-layer': 'admin',
+        filter: ['==', ['get', 'admin_level'], 1],
+        paint: { 'fill-color': 'transparent', 'fill-opacity': 0 },
+      });
+    } catch (_) {}
+  }
 
   // sido 소스
   if (!map.getSource('korea-sido')) {
