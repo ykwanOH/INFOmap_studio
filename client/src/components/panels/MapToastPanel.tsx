@@ -1,11 +1,10 @@
 /**
- * MACRO Map Studio — Map Toast Panel (v2 · Hi-Res Capture)
- * 옵션 A 방식:
- *   1. pixelRatio × mult(2 or 4)로 미니맵 캔버스 업스케일 렌더
- *   2. 업스케일 캔버스 중앙에서 384×mult 정사각형 crop
- *   3. 2px 보더 추가
- *   4. 384×384로 다운샘플
- *   5. pixelRatio 원복
+ * INFOmap Studio — Map Toast Panel (Hi-Res Capture)
+ * 캡처 방식:
+ *   1. pixelRatio × 4로 미니맵 캔버스 업스케일 렌더
+ *   2. 업스케일 캔버스 중앙에서 정사각형 crop
+ *   3. 384×384로 다운샘플
+ *   4. pixelRatio 원복 · PNG 저장
  */
 
 import { useRef, useEffect, useCallback, useState } from 'react';
@@ -18,7 +17,6 @@ if (!mapboxgl.accessToken) {
 }
 
 const OUTPUT_SIZE = 384;
-const BORDER_PX   = 2;
 const BORDER_COLOR = 'rgb(200,200,200)';
 
 const labelStyle = {
@@ -227,12 +225,7 @@ export function MapToastPanel() {
         oCtx.imageSmoothingQuality  = 'high';
         oCtx.drawImage(cropped, 0, 0, OUTPUT_SIZE, OUTPUT_SIZE);
 
-        // 4. 2px 보더
-        oCtx.strokeStyle = BORDER_COLOR;
-        oCtx.lineWidth   = BORDER_PX * 2;  // inset이므로 ×2 (절반만 노출)
-        oCtx.strokeRect(0, 0, OUTPUT_SIZE, OUTPUT_SIZE);
-
-        // 5. 저장
+        // 4. 저장
         out.toBlob((blob) => {
           if (!blob) return;
           const url = URL.createObjectURL(blob);

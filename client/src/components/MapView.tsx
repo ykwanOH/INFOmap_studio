@@ -824,13 +824,19 @@ export default function MapView() {
     // ── BW PRINT ──────────────────────────────────────────────────────────
     if (extraLook === 'bwprint') {
       if (mapCanvas) mapCanvas.style.filter = 'grayscale(1) contrast(1.08) brightness(1.04)';
-      applyColorsToMap(map, { landmass: '#F5F5EE', hydro: '#CCCCCC', green: '#E8E8E0', expressway: '#DEDEDE', streetroad: '#D4D4D0' });
-      // Water: stripe fill-pattern
+      // 육지·녹지 → 미색 흰색 / 수계 기반색은 흰색(패턴 아래 배경)
+      applyColorsToMap(map, { landmass: '#F5F5EE', hydro: '#FFFFFF', green: '#E8E8E0', expressway: '#DEDEDE', streetroad: '#D4D4D0' });
+      // 수계 → 사선 패턴 (흰 배경 위에 줄무늬 색상이 보임)
       const stripeImg = createStripeImageData(bwStripeColor, bwStripeAngle, bwStripeWidth, bwStripeGap);
       if (map.hasImage('bw-stripe')) map.removeImage('bw-stripe');
       map.addImage('bw-stripe', stripeImg);
       ['water', 'water-shadow'].forEach(id => {
-        try { if (map.getLayer(id)) { map.setPaintProperty(id, 'fill-pattern', 'bw-stripe'); } } catch (_) {}
+        try {
+          if (map.getLayer(id)) {
+            map.setPaintProperty(id, 'fill-color', '#FFFFFF');
+            map.setPaintProperty(id, 'fill-pattern', 'bw-stripe');
+          }
+        } catch (_) {}
       });
     }
 
@@ -852,6 +858,15 @@ export default function MapView() {
       const pal = DIGITAL_PALETTES[digitalPreset ?? 'cyberglitch'];
       applyColorsToMap(map, { landmass: pal.land, hydro: pal.hydro, green: pal.green, expressway: pal.expressway, streetroad: pal.streetroad });
       if (mapCanvas) mapCanvas.style.filter = 'saturate(1.8) contrast(1.25) brightness(1.1)';
+      // 회색 얼룩 원인: fill-extrusion(건물 등) · raster 레이어가 landmass 색을 받지 못해 기본 회색으로 남음 → 숨김
+      {
+        const allL = map.getStyle()?.layers || [];
+        for (const l of allL) {
+          if (l.type === 'fill-extrusion' || l.type === 'raster') {
+            try { map.setLayoutProperty(l.id, 'visibility', 'none'); } catch (_) {}
+          }
+        }
+      }
 
       // Grid overlay — much more visible
       const gridColor  = digitalPreset === 'neonnights' ? 'rgba(224,64,251,0.22)' : 'rgba(102,252,241,0.18)';
@@ -862,7 +877,7 @@ export default function MapView() {
         `linear-gradient(90deg,${gridColor} 1px,transparent 1px),`,
         `linear-gradient(${gridColor2} 1px,transparent 1px),`,
         `linear-gradient(90deg,${gridColor2} 1px,transparent 1px);`,
-        'background-size:20px 20px,20px 20px,100px 100px,100px 100px;',
+        'background-size:33px 33px,33px 33px,100px 100px,100px 100px;',
       ].join(''));
 
       // HUD overlay — bright neon border + inner glow
@@ -1495,13 +1510,16 @@ function initCustomLayers(map: mapboxgl.Map) {
   // composite/admin fill 레이어를 별도로 추가하여 queryRenderedFeatures로 geometry 획득
   if (!map.getLayer('admin-1-fill-hit')) {
     try {
+      // admin_level 필터를 ['<=', 1]로 넓혀야 Mapbox composite/admin 소스에서
+      // 실제 geometry를 queryRenderedFeatures로 얻을 수 있음.
+      // (일부 타일에서 admin_level이 숫자 비교에 실패하는 경우 대비)
       map.addLayer({
         id: 'admin-1-fill-hit',
         type: 'fill',
         source: 'composite',
         'source-layer': 'admin',
-        filter: ['==', ['get', 'admin_level'], 1],
-        paint: { 'fill-color': 'transparent', 'fill-opacity': 0 },
+        filter: ['<=', ['get', 'admin_level'], 1],
+        paint: { 'fill-color': 'rgba(0,0,0,0)', 'fill-opacity': 0.001 },
       });
     } catch (_) {}
   }
