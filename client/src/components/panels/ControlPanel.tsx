@@ -162,16 +162,13 @@ export function ControlPanel() {
           <PanelSectionDivider />
 
           <MapToastPanel />
-          <HiResPanel />
 
           <PanelSectionDivider />
 
-          <PickPushPanel />
           <TerrainPanel />
+          <PickPushPanel />
           <RouteLinePanel />
-
-          <PanelSectionDivider />
-
+          <HiResPanel />
           <ExtraLookPanel />
         </div>
       </div>

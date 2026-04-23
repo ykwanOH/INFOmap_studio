@@ -19,10 +19,11 @@ const VECTOR_STYLE = 'mapbox://styles/mapbox/streets-v12';
 const SATELLITE_STYLE = 'mapbox://styles/mapbox/satellite-streets-v12';
 
 // BW Print stripe pattern generator
-function createStripeCanvas(
+// Returns {width, height, data} format that Mapbox addImage accepts reliably
+function createStripeImageData(
   color: string, angleDeg: number, lineWidth: number, gap: number
-): HTMLCanvasElement {
-  const period = Math.max(1, lineWidth + gap);
+): { width: number; height: number; data: Uint8Array } {
+  const period = Math.max(2, lineWidth + gap);
   const size = Math.max(64, Math.ceil(period * 8));
   const canvas = document.createElement('canvas');
   canvas.width = size;
@@ -36,10 +37,12 @@ function createStripeCanvas(
   ctx.fillStyle = color;
   const diag = size * 1.5;
   for (let x = -diag; x <= diag; x += period) {
-    ctx.fillRect(x, -diag, lineWidth, diag * 2);
+    ctx.fillRect(x, -diag, Math.max(1, lineWidth), diag * 2);
   }
   ctx.restore();
-  return canvas;
+  // Extract raw RGBA — avoids Mapbox pixelRatio mismatch error
+  const raw = ctx.getImageData(0, 0, size, size);
+  return { width: size, height: size, data: new Uint8Array(raw.data.buffer) };
 }
 
 // Vintage color palettes
@@ -49,10 +52,12 @@ const VINTAGE_PALETTES = {
   bauhaus:    { land: '#F1FAEE', hydro: '#1D3557', green: '#A8DADC', expressway: '#457B9D', streetroad: '#E63946' },
 };
 
-// Digital color palettes  
+// Digital color palettes — land uses neon mid-tone, expressway full bright
 const DIGITAL_PALETTES = {
-  cyberglitch: { land: '#1F2833', hydro: '#0B0C10', green: '#0B0C10', expressway: '#66FCF1', streetroad: '#45A29E' },
-  neonnights:  { land: '#0A001F', hydro: '#060012', green: '#060012', expressway: '#B100E8', streetroad: '#6A00F4' },
+  // Cyber Glitch: dark teal land, deep navy water, neon cyan on roads
+  cyberglitch: { land: '#0D2137', hydro: '#030A14', green: '#0A1F10', expressway: '#66FCF1', streetroad: '#45A29E' },
+  // Neon Nights: deep indigo land, near-black water, magenta/violet roads
+  neonnights:  { land: '#1A0035', hydro: '#07000F', green: '#0D0025', expressway: '#E040FB', streetroad: '#9C27B0' },
 };
 
 // 지역명 관련 레이어 ID 패턴 (모든 텍스트 레이어 포함)
@@ -806,10 +811,11 @@ export default function MapView() {
           try { if (map.getLayer(id)) { map.setPaintProperty(id, 'fill-pattern', null); map.setPaintProperty(id, 'fill-color', colors.hydro); } } catch (_) {}
         });
         if (map.hasImage('bw-stripe')) map.removeImage('bw-stripe');
-        // Restore road blur
+        // Restore road blur & zoom range
         const layers2 = map.getStyle()?.layers || [];
-        layers2.filter(l => l.id.startsWith('road-') || l.id.startsWith('bridge-')).forEach(l => {
+        layers2.filter(l => l.id.startsWith('road-') || l.id.startsWith('bridge-') || l.id.startsWith('tunnel-')).forEach(l => {
           try { map.setPaintProperty(l.id, 'line-blur', 0); } catch (_) {}
+          try { map.setLayerZoomRange(l.id, (l as any).minzoom ?? 0, (l as any).maxzoom ?? 24); } catch (_) {}
         });
       }
       return;
@@ -820,9 +826,9 @@ export default function MapView() {
       if (mapCanvas) mapCanvas.style.filter = 'grayscale(1) contrast(1.08) brightness(1.04)';
       applyColorsToMap(map, { landmass: '#F5F5EE', hydro: '#CCCCCC', green: '#E8E8E0', expressway: '#DEDEDE', streetroad: '#D4D4D0' });
       // Water: stripe fill-pattern
-      const stripeCanvas = createStripeCanvas(bwStripeColor, bwStripeAngle, bwStripeWidth, bwStripeGap);
+      const stripeImg = createStripeImageData(bwStripeColor, bwStripeAngle, bwStripeWidth, bwStripeGap);
       if (map.hasImage('bw-stripe')) map.removeImage('bw-stripe');
-      map.addImage('bw-stripe', stripeCanvas as any, { pixelRatio: 2 });
+      map.addImage('bw-stripe', stripeImg);
       ['water', 'water-shadow'].forEach(id => {
         try { if (map.getLayer(id)) { map.setPaintProperty(id, 'fill-pattern', 'bw-stripe'); } } catch (_) {}
       });
@@ -845,16 +851,45 @@ export default function MapView() {
     if (extraLook === 'digital') {
       const pal = DIGITAL_PALETTES[digitalPreset ?? 'cyberglitch'];
       applyColorsToMap(map, { landmass: pal.land, hydro: pal.hydro, green: pal.green, expressway: pal.expressway, streetroad: pal.streetroad });
-      if (mapCanvas) mapCanvas.style.filter = 'saturate(1.4) contrast(1.2) brightness(1.05)';
-      // Grid overlay
-      const gridColor = digitalPreset === 'neonnights' ? 'rgba(177,0,232,0.08)' : 'rgba(102,252,241,0.06)';
-      addOverlay('macro-grid', `position:absolute;inset:0;pointer-events:none;z-index:4;background-image:linear-gradient(${gridColor} 1px,transparent 1px),linear-gradient(90deg,${gridColor} 1px,transparent 1px);background-size:20px 20px;`);
-      // HUD corners
-      const hudColor = digitalPreset === 'neonnights' ? 'rgba(177,0,232,0.7)' : 'rgba(102,252,241,0.7)';
-      addOverlay('macro-hud', `position:absolute;inset:0;pointer-events:none;z-index:6;box-shadow:inset 0 0 0 1px ${hudColor.replace('0.7','0.15')},inset 0 0 40px ${hudColor.replace('0.7','0.08')};`);
-      // Road glow effect via line-blur
-      const roadLayers = (map.getStyle()?.layers || []).filter(l => l.id.startsWith('road-') || l.id.startsWith('bridge-'));
-      roadLayers.forEach(l => { try { map.setPaintProperty(l.id, 'line-blur', 2); } catch (_) {} });
+      if (mapCanvas) mapCanvas.style.filter = 'saturate(1.8) contrast(1.25) brightness(1.1)';
+
+      // Grid overlay — much more visible
+      const gridColor  = digitalPreset === 'neonnights' ? 'rgba(224,64,251,0.22)' : 'rgba(102,252,241,0.18)';
+      const gridColor2 = digitalPreset === 'neonnights' ? 'rgba(224,64,251,0.10)' : 'rgba(102,252,241,0.08)';
+      addOverlay('macro-grid', [
+        'position:absolute;inset:0;pointer-events:none;z-index:4;',
+        `background-image:linear-gradient(${gridColor} 1px,transparent 1px),`,
+        `linear-gradient(90deg,${gridColor} 1px,transparent 1px),`,
+        `linear-gradient(${gridColor2} 1px,transparent 1px),`,
+        `linear-gradient(90deg,${gridColor2} 1px,transparent 1px);`,
+        'background-size:20px 20px,20px 20px,100px 100px,100px 100px;',
+      ].join(''));
+
+      // HUD overlay — bright neon border + inner glow
+      const neonC = digitalPreset === 'neonnights' ? 'rgba(224,64,251' : 'rgba(102,252,241';
+      addOverlay('macro-hud', [
+        'position:absolute;inset:0;pointer-events:none;z-index:6;',
+        `box-shadow:`,
+        `inset 0 0 0 2px ${neonC},0.55),`,
+        `inset 0 0 0 4px ${neonC},0.15),`,
+        `inset 0 0 60px ${neonC},0.12),`,
+        `inset 0 0 120px ${neonC},0.06);`,
+      ].join(''));
+
+      // Road zoom offset: show roads 2 zoom levels earlier
+      const allLayers = map.getStyle()?.layers || [];
+      allLayers.forEach(l => {
+        const isRoad = l.id.startsWith('road-') || l.id.startsWith('bridge-') || l.id.startsWith('tunnel-');
+        if (!isRoad) return;
+        try {
+          // Get original minzoom from layer spec, default 0
+          const origMin = (l as any).minzoom ?? 0;
+          const newMin = Math.max(0, origMin - 2);
+          map.setLayerZoomRange(l.id, newMin, (l as any).maxzoom ?? 24);
+        } catch (_) {}
+        // Glow via blur
+        try { map.setPaintProperty(l.id, 'line-blur', 3); } catch (_) {}
+      });
     }
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
