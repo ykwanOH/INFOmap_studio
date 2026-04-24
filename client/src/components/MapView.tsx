@@ -936,7 +936,8 @@ export default function MapView() {
       {
         const allLayers = map.getStyle()?.layers || [];
         allLayers.forEach(l => {
-          const isRoad = l.id.startsWith('road-') || l.id.startsWith('bridge-') || l.id.startsWith('tunnel-') || l.id.includes('ferry');
+          const isFerryLine = l.type === 'line' && l.id.includes('ferry');
+          const isRoad = l.id.startsWith('road-') || l.id.startsWith('bridge-') || l.id.startsWith('tunnel-') || isFerryLine;
           if (!isRoad) return;
           try { map.setPaintProperty(l.id, 'line-blur', 3); } catch (_) {}
         });
@@ -1250,8 +1251,8 @@ function applyRoadVisibility(map: mapboxgl.Map, visible: boolean, extraLook?: st
           map.setLayoutProperty(id, 'visibility', 'none');
           continue;
         }
-        // ferry 포함 여부
-        const isFerry = id.includes('ferry');
+        // ferry 라인 레이어: type='line' + id에 ferry 포함 (라벨 제외)
+        const isFerry = layer.type === 'line' && id.includes('ferry');
         if (!isRoadLineLayer(id, layer.type) && !isFerry) continue;
         const tier = getRoadTier(id);
         if (!tier && !isFerry) continue;
