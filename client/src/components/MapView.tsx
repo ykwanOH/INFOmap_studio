@@ -223,13 +223,13 @@ export default function MapView() {
       const store = useMapStore.getState();
       applyColors(map, store.colors);
       applyLabelVisibility(map, store.showLabels);
-      applyRoadVisibility(map, store.showRoads);
+      applyRoadVisibility(map, store.showRoads, store.extraLook);
       applyRoadWidthOverride(map); // 초기 스타일 = 벡터
       // ★ idle 후 재적용: 'load' 직후 일부 레이어가 아직 초기화 중일 수 있어
       //   setLayoutProperty가 silently fail하는 경우를 보완.
       map.once('idle', () => {
         applyColors(map, store.colors);
-        applyRoadVisibility(map, store.showRoads);
+        applyRoadVisibility(map, store.showRoads, store.extraLook);
         applyRoadWidthOverride(map);
       });
       setMapInstance(map);
@@ -259,7 +259,7 @@ export default function MapView() {
       const store = useMapStore.getState();
       applyColors(map, store.colors);
       applyLabelVisibility(map, store.showLabels);
-      applyRoadVisibility(map, store.showRoads);
+      applyRoadVisibility(map, store.showRoads, store.extraLook);
       // 벡터/위성 모두 line-width 명시: width를 직접 찍으면
       // setLayoutProperty('visibility') 타이밍 실패를 우회하고
       // 레이어가 확실히 렌더링 파이프라인에 진입함
@@ -267,7 +267,7 @@ export default function MapView() {
       // ★ idle 후 재적용: 스타일 전환 직후 레이어가 완전히 초기화되지 않은 경우 보완
       map.once('idle', () => {
         applyColors(map, store.colors);
-        applyRoadVisibility(map, store.showRoads);
+        applyRoadVisibility(map, store.showRoads, store.extraLook);
         applyRoadWidthOverride(map);
       });
     });
@@ -297,7 +297,7 @@ export default function MapView() {
     // 색 적용 후 visibility 재동기화:
     // 'load'/'style.load' 직후 타이밍에 setLayoutProperty가 실패(catch 무시)한 경우를 보완.
     // applyColors가 레이어를 건드린 직후 visibility를 재확인하면 항상 올바른 상태가 됨.
-    applyRoadVisibility(map, showRoads);
+    applyRoadVisibility(map, showRoads, extraLook);
   }, [colors]);
 
   // ── Label visibility ──────────────────────────────────────────────────────────
@@ -306,14 +306,14 @@ export default function MapView() {
     if (!map || !styleLoadedRef.current) return;
     applyLabelVisibility(map, showLabels);
     // showLabels 변경 시 도로 레이블도 재적용 (도로 레이블은 showLabels && showRoads 둘 다 필요)
-    applyRoadVisibility(map, showRoads);
+    applyRoadVisibility(map, showRoads, extraLook);
   }, [showLabels]);
 
   // ── Road visibility ─────────────────────────────────────────────────────────────────
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !styleLoadedRef.current) return;
-    applyRoadVisibility(map, showRoads);
+    applyRoadVisibility(map, showRoads, extraLook);
   }, [showRoads]);
 
 
@@ -931,22 +931,17 @@ export default function MapView() {
         `inset 0 0 120px ${neonC},0.06);`,
       ].join(''));
 
-      // Digital 룩: 도로를 줌 6부터 표시 (applyRoadVisibility의 제한 무시)
+      // Digital 룩: applyRoadVisibility(extraLook='digital')에서 zoom 6 처리
+      // glow blur만 별도 적용
       {
         const allLayers = map.getStyle()?.layers || [];
         allLayers.forEach(l => {
           const isRoad = l.id.startsWith('road-') || l.id.startsWith('bridge-') || l.id.startsWith('tunnel-') || l.id.includes('ferry');
           if (!isRoad) return;
-          try {
-            // 모든 도로를 줌 6부터 표시 (expressway는 6, street/local은 8)
-            const tier = getRoadTier(l.id);
-            const newMin = tier === 'expressway' ? 6 : tier === 'street' ? 8 : 9;
-            map.setLayoutProperty(l.id, 'visibility', 'visible');
-            map.setLayerZoomRange(l.id, newMin, (l as any).maxzoom ?? 24);
-          } catch (_) {}
-          // Glow via blur
           try { map.setPaintProperty(l.id, 'line-blur', 3); } catch (_) {}
         });
+        // zoom range는 applyRoadVisibility에서 처리
+        applyRoadVisibility(map, showRoads, 'digital');
       }
     }
 
@@ -1241,10 +1236,12 @@ function applyLabelVisibility(map: mapboxgl.Map, visible: boolean) {
   } catch (e) {}
 }
 
-function applyRoadVisibility(map: mapboxgl.Map, visible: boolean) {
+function applyRoadVisibility(map: mapboxgl.Map, visible: boolean, extraLook?: string | null) {
   try {
     const style = map.getStyle();
     if (!style?.layers) return;
+
+    const isDigital = extraLook === 'digital';
 
     for (const layer of style.layers) {
       const id = layer.id;
@@ -1253,9 +1250,11 @@ function applyRoadVisibility(map: mapboxgl.Map, visible: boolean) {
           map.setLayoutProperty(id, 'visibility', 'none');
           continue;
         }
-        if (!isRoadLineLayer(id, layer.type)) continue;
+        // ferry 포함 여부
+        const isFerry = id.includes('ferry');
+        if (!isRoadLineLayer(id, layer.type) && !isFerry) continue;
         const tier = getRoadTier(id);
-        if (!tier) continue;
+        if (!tier && !isFerry) continue;
 
         if (!visible) {
           map.setLayoutProperty(id, 'visibility', 'none');
@@ -1264,13 +1263,17 @@ function applyRoadVisibility(map: mapboxgl.Map, visible: boolean) {
 
         map.setLayoutProperty(id, 'visibility', 'visible');
 
-        // ★ minzoom 직접 설정 — 근본적인 줌 레벨 제어
-        // expressway: zoom 7 미만 숨김
-        // street/local: zoom 12.5 미만 숨김
-        if (tier === 'expressway') {
-          map.setLayerZoomRange(id, 7, 24);
+        if (isDigital) {
+          // Digital 룩: 줌 6부터 전체 표시
+          const newMin = (tier === 'expressway' || isFerry) ? 6 : tier === 'street' ? 8 : 9;
+          map.setLayerZoomRange(id, newMin, 24);
         } else {
-          map.setLayerZoomRange(id, 12.5, 24);
+          // 기본: expressway zoom 7, street/local zoom 12.5
+          if (tier === 'expressway') {
+            map.setLayerZoomRange(id, 7, 24);
+          } else {
+            map.setLayerZoomRange(id, 12.5, 24);
+          }
         }
       } catch (e) {}
     }
