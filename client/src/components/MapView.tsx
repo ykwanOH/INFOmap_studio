@@ -935,7 +935,7 @@ export default function MapView() {
       {
         const allLayers = map.getStyle()?.layers || [];
         allLayers.forEach(l => {
-          const isRoad = l.id.startsWith('road-') || l.id.startsWith('bridge-') || l.id.startsWith('tunnel-');
+          const isRoad = l.id.startsWith('road-') || l.id.startsWith('bridge-') || l.id.startsWith('tunnel-') || l.id.includes('ferry');
           if (!isRoad) return;
           try {
             // 모든 도로를 줌 6부터 표시 (expressway는 6, street/local은 8)
