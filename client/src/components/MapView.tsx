@@ -231,11 +231,7 @@ export default function MapView() {
         applyColors(map, store.colors);
         applyRoadVisibility(map, store.showRoads, store.extraLook);
         applyRoadWidthOverride(map);
-        // 임시: ferry/line 레이어 id 콘솔 출력
-        const lineLayers = map.getStyle()?.layers?.filter(l => l.type === 'line') ?? [];
-        const ferryLayers = lineLayers.filter(l => l.id.toLowerCase().includes('ferry'));
-        console.log('[All line layers]', lineLayers.map(l => l.id));
-        console.log('[Ferry line layers]', ferryLayers.map(l => l.id));
+
       });
       setMapInstance(map);
     });
@@ -1275,6 +1271,17 @@ function applyRoadVisibility(map: mapboxgl.Map, visible: boolean, extraLook?: st
           } else {
             map.setLayerZoomRange(id, 12.5, 24);
           }
+        }
+      } catch (e) {}
+    }
+
+    // ferry, ferry-auto: 명시적 zoom 설정
+    for (const ferryId of ['ferry', 'ferry-auto']) {
+      try {
+        if (!map.getLayer(ferryId)) continue;
+        map.setLayoutProperty(ferryId, 'visibility', visible ? 'visible' : 'none');
+        if (visible) {
+          map.setLayerZoomRange(ferryId, isDigital ? 5 : 8, 24);
         }
       } catch (e) {}
     }
