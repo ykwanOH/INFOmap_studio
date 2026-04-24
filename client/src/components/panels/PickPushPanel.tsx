@@ -108,60 +108,71 @@ export function PickPushPanel() {
       mapInstance.once('render', () => {
         try {
           const src = mapInstance.getCanvas();
+
+          // ── 비율 왜곡 수정 ──────────────────────────────────────────────
+          // src는 devicePixelRatio가 반영된 실제 픽셀 크기
+          // CSS 뷰포트의 실제 16:9 비율을 기준으로 src를 center-crop해서
+          // resW×resH(FHD/4K)에 정확히 맞춤
+          const dpr = window.devicePixelRatio || 1;
+          // CSS 뷰포트 크기 (배율 독립적인 논리 픽셀)
+          const cssW = src.width / dpr;
+          const cssH = src.height / dpr;
+          // 목표 비율 (16:9)
+          const targetRatio = resW / resH;
+          const srcRatio = cssW / cssH;
+
+          // src에서 center-crop할 영역 계산 (물리 픽셀 단위)
+          let cropX = 0, cropY = 0, cropW = src.width, cropH = src.height;
+          if (Math.abs(srcRatio - targetRatio) > 0.001) {
+            if (srcRatio > targetRatio) {
+              // src가 더 넓음 → 좌우 crop
+              cropW = Math.round(src.height * targetRatio);
+              cropX = Math.round((src.width - cropW) / 2);
+            } else {
+              // src가 더 높음 → 상하 crop
+              cropH = Math.round(src.width / targetRatio);
+              cropY = Math.round((src.height - cropH) / 2);
+            }
+          }
+
+          // map.project()는 CSS픽셀 기준 → 물리픽셀 변환 스케일
+          const scaleX = cropW / cssW;
+          const scaleY = cropH / cssH;
+
+          // ── city marker 위치 계산 헬퍼 ──────────────────────────────────
+          const drawMarkers = (ctx: CanvasRenderingContext2D, sw: number, sh: number) => {
+            const storeMarkers = useMapStore.getState().markers;
+            if (!storeMarkers.length) return;
+            storeMarkers.forEach((m) => {
+              const pt = mapInstance.project([m.lng, m.lat]);
+              // CSS픽셀 → crop 기준 물리픽셀 → 출력 픽셀
+              const px = ((pt.x * dpr - cropX) / cropW) * sw;
+              const py = ((pt.y * dpr - cropY) / cropH) * sh;
+              if (px < 0 || px > sw || py < 0 || py > sh) return;
+              // 도트 그리기
+              const r = Math.max(6, sw / 320);
+              ctx.beginPath();
+              ctx.arc(px, py, r, 0, Math.PI * 2);
+              ctx.fillStyle = m.color;
+              ctx.fill();
+              ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+              ctx.lineWidth = Math.max(1.5, r * 0.35);
+              ctx.stroke();
+            });
+          };
+
           const out = document.createElement('canvas');
           out.width = resW; out.height = resH;
           const ctx = out.getContext('2d')!;
 
           if (selectionOnly && pickedFeatures.length > 0) {
-            // 투명 배경 — 선택 나라 위치 유지, 배경은 투명
-            ctx.drawImage(src, 0, 0, resW, resH);
+            // 투명 배경 — 선택 나라만 표시
+            ctx.drawImage(src, cropX, cropY, cropW, cropH, 0, 0, resW, resH);
             if (extraLook) applyLookFilter(ctx, resW, resH);
-            // 선택 나라 외 영역을 마스킹 (투명 처리)
-            // Mapbox canvas 전체 크기 대비 비율로 picked geometry bounding box 계산
-            // 간단 구현: 전체 canvas 그린 후 picked geometry 범위 외 픽셀 투명화
-            // → 복잡한 마스킹 대신: 전체 그리고 별도 마스크 canvas로 punch-through
-            const maskCanvas = document.createElement('canvas');
-            maskCanvas.width = resW; maskCanvas.height = resH;
-            const mCtx = maskCanvas.getContext('2d')!;
-            mCtx.fillStyle = 'rgba(0,0,0,1)';
-            mCtx.fillRect(0, 0, resW, resH);
-            mCtx.globalCompositeOperation = 'destination-out';
-            // picked features의 지리좌표를 현재 map viewport 기준 픽셀로 변환
-            pickedFeatures.forEach((f) => {
-              const geo = (f as any).geometry as GeoJSON.Geometry | undefined;
-              if (!geo) return;
-              const rings: number[][][] = geo.type === 'Polygon'
-                ? geo.coordinates
-                : geo.type === 'MultiPolygon'
-                  ? geo.coordinates.flat()
-                  : [];
-              rings.forEach((ring) => {
-                mCtx.beginPath();
-                ring.forEach((coord, i) => {
-                  const pt = mapInstance.project([coord[0], coord[1]]);
-                  const px = (pt.x / src.width) * resW;
-                  const py = (pt.y / src.height) * resH;
-                  i === 0 ? mCtx.moveTo(px, py) : mCtx.lineTo(px, py);
-                });
-                mCtx.closePath();
-                mCtx.fill();
-              });
-            });
-            // 마스크 적용: 마스크 흰 영역만 남기기
-            const finalCanvas = document.createElement('canvas');
-            finalCanvas.width = resW; finalCanvas.height = resH;
-            const fCtx = finalCanvas.getContext('2d')!;
-            fCtx.drawImage(out, 0, 0);
-            fCtx.globalCompositeOperation = 'destination-in';
-            // 마스크 반전: picked 영역만 남김
-            const mCtx2 = maskCanvas.getContext('2d')!;
-            mCtx2.globalCompositeOperation = 'source-over';
-            // 간단 방법: destination-in으로 picked 영역만 보이게
+
             const maskCanvas2 = document.createElement('canvas');
             maskCanvas2.width = resW; maskCanvas2.height = resH;
             const m2 = maskCanvas2.getContext('2d')!;
-            m2.fillStyle = 'rgba(0,0,0,0)';
-            m2.fillRect(0, 0, resW, resH);
             pickedFeatures.forEach((f) => {
               const geo = (f as any).geometry as GeoJSON.Geometry | undefined;
               if (!geo) return;
@@ -174,8 +185,8 @@ export function PickPushPanel() {
                 m2.beginPath();
                 ring.forEach((coord, i) => {
                   const pt = mapInstance.project([coord[0], coord[1]]);
-                  const px = (pt.x / src.width) * resW;
-                  const py = (pt.y / src.height) * resH;
+                  const px = ((pt.x * dpr - cropX) / cropW) * resW;
+                  const py = ((pt.y * dpr - cropY) / cropH) * resH;
                   i === 0 ? m2.moveTo(px, py) : m2.lineTo(px, py);
                 });
                 m2.closePath();
@@ -183,14 +194,21 @@ export function PickPushPanel() {
                 m2.fill();
               });
             });
+            const finalCanvas = document.createElement('canvas');
+            finalCanvas.width = resW; finalCanvas.height = resH;
+            const fCtx = finalCanvas.getContext('2d')!;
+            fCtx.drawImage(out, 0, 0);
+            fCtx.globalCompositeOperation = 'destination-in';
             fCtx.drawImage(maskCanvas2, 0, 0);
+            fCtx.globalCompositeOperation = 'source-over';
+            drawMarkers(fCtx, resW, resH);
             const link = document.createElement('a');
             link.download = `infomap_pick_${exportResolution}_${Date.now()}.png`;
             link.href = finalCanvas.toDataURL('image/png');
             link.click();
           } else {
-            // 전체 viewport
-            ctx.drawImage(src, 0, 0, resW, resH);
+            // 전체 viewport — center-crop으로 비율 보정
+            ctx.drawImage(src, cropX, cropY, cropW, cropH, 0, 0, resW, resH);
             if (extraLook) applyLookFilter(ctx, resW, resH);
             if (extraLook === 'vintage') {
               for (let y = 0; y < resH; y += 4) {
@@ -198,6 +216,7 @@ export function PickPushPanel() {
                 ctx.fillRect(0, y, resW, 2);
               }
             }
+            drawMarkers(ctx, resW, resH);
             const link = document.createElement('a');
             link.download = `infomap_map_${exportResolution}_${Date.now()}.png`;
             link.href = out.toDataURL('image/png');

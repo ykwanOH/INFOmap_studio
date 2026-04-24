@@ -89,6 +89,26 @@ export function HiResPanel() {
       ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(src, 0, 0, outW, outH);
 
+      // ── City Marker 오버레이 ──────────────────────────────────────────
+      {
+        const dpr = window.devicePixelRatio || 1;
+        const storeMarkers = useMapStore.getState().markers;
+        storeMarkers.forEach((m) => {
+          const pt = mapInstance.project([m.lng, m.lat]);
+          const px = (pt.x * dpr / src.width) * outW;
+          const py = (pt.y * dpr / src.height) * outH;
+          if (px < 0 || px > outW || py < 0 || py > outH) return;
+          const r = Math.max(8, outW / 480);
+          ctx.beginPath();
+          ctx.arc(px, py, r, 0, Math.PI * 2);
+          ctx.fillStyle = m.color;
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+          ctx.lineWidth = Math.max(2, r * 0.35);
+          ctx.stroke();
+        });
+      }
+
       out.toBlob(blob => {
         if (!blob) return;
         const url = URL.createObjectURL(blob);
