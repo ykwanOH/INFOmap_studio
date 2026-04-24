@@ -93,7 +93,7 @@ export function ExtraLookPanel() {
   const isSolid = bwStripeGap === 0 || bwStripeWidth >= bwStripeGap;
 
   return (
-    <SectionPanel sectionKey="extraLook" title="Extra Look">
+    <SectionPanel sectionKey="extraLook" title="Print/Mobile Style">
 
       {/* ── BW PRINT ──────────────────────────────────────────────── */}
       <LookButton

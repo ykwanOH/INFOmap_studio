@@ -132,7 +132,7 @@ export function HiResPanel() {
   }, [mapInstance, mult, hiResCapturing, setHiResCapturing]);
 
   return (
-    <SectionPanel sectionKey="hiResCap" title="Hi-Res Capture">
+    <SectionPanel sectionKey="hiResCap" title="HI-RES CAPTURE">
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <span style={labelStyle}>View zoom</span>

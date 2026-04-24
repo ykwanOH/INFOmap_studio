@@ -278,7 +278,7 @@ export function PickPushPanel() {
   };
 
   return (
-    <SectionPanel sectionKey="pickPush" title="Pick & Export">
+    <SectionPanel sectionKey="pickPush" title="Region Pick">
 
       {/* Pick 단위 선택 */}
       <div style={{ display: 'flex', gap: '4px' }}>

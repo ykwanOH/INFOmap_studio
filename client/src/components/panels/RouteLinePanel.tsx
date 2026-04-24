@@ -109,7 +109,7 @@ export function RouteLinePanel() {
   };
 
   return (
-    <SectionPanel sectionKey="routeLine" title="Route Line">
+    <SectionPanel sectionKey="routeLine" title="Route & Marker">
 
       {/* Draw button + color */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>

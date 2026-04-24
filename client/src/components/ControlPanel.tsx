@@ -156,6 +156,7 @@ export function ControlPanel() {
         {/* Sections */}
         <div style={{ flex: 1 }}>
           <CameraPanel />
+          <TerrainPanel />
           <ColorPanel />
           <BorderMarkerPanel />
 
@@ -165,7 +166,6 @@ export function ControlPanel() {
 
           <PanelSectionDivider />
 
-          <TerrainPanel />
           <PickPushPanel />
           <RouteLinePanel />
           <HiResPanel />
