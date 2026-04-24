@@ -936,8 +936,7 @@ export default function MapView() {
       {
         const allLayers = map.getStyle()?.layers || [];
         allLayers.forEach(l => {
-          const isFerryLine = l.type === 'line' && l.id.includes('ferry');
-          const isRoad = l.id.startsWith('road-') || l.id.startsWith('bridge-') || l.id.startsWith('tunnel-') || isFerryLine;
+          const isRoad = l.id.startsWith('road-') || l.id.startsWith('bridge-') || l.id.startsWith('tunnel-');
           if (!isRoad) return;
           try { map.setPaintProperty(l.id, 'line-blur', 3); } catch (_) {}
         });
@@ -1251,11 +1250,9 @@ function applyRoadVisibility(map: mapboxgl.Map, visible: boolean, extraLook?: st
           map.setLayoutProperty(id, 'visibility', 'none');
           continue;
         }
-        // ferry 라인 레이어: type='line' + id에 ferry 포함 (라벨 제외)
-        const isFerry = layer.type === 'line' && id.includes('ferry');
-        if (!isRoadLineLayer(id, layer.type) && !isFerry) continue;
+        if (!isRoadLineLayer(id, layer.type)) continue;
         const tier = getRoadTier(id);
-        if (!tier && !isFerry) continue;
+        if (!tier) continue;
 
         if (!visible) {
           map.setLayoutProperty(id, 'visibility', 'none');
@@ -1265,11 +1262,9 @@ function applyRoadVisibility(map: mapboxgl.Map, visible: boolean, extraLook?: st
         map.setLayoutProperty(id, 'visibility', 'visible');
 
         if (isDigital) {
-          // Digital 룩: 줌 6부터 전체 표시
-          const newMin = (tier === 'expressway' || isFerry) ? 6 : tier === 'street' ? 8 : 9;
+          const newMin = tier === 'expressway' ? 6 : tier === 'street' ? 8 : 9;
           map.setLayerZoomRange(id, newMin, 24);
         } else {
-          // 기본: expressway zoom 7, street/local zoom 12.5
           if (tier === 'expressway') {
             map.setLayerZoomRange(id, 7, 24);
           } else {
