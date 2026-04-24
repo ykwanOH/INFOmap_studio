@@ -231,6 +231,11 @@ export default function MapView() {
         applyColors(map, store.colors);
         applyRoadVisibility(map, store.showRoads, store.extraLook);
         applyRoadWidthOverride(map);
+        // 임시: ferry/line 레이어 id 콘솔 출력
+        const lineLayers = map.getStyle()?.layers?.filter(l => l.type === 'line') ?? [];
+        const ferryLayers = lineLayers.filter(l => l.id.toLowerCase().includes('ferry'));
+        console.log('[All line layers]', lineLayers.map(l => l.id));
+        console.log('[Ferry line layers]', ferryLayers.map(l => l.id));
       });
       setMapInstance(map);
     });
