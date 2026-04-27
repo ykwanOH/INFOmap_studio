@@ -788,12 +788,9 @@ export default function MapView() {
     if (pickDisplayMode === 'extrude') {
       if (map.getLayer('picked-extrude'))       map.setLayoutProperty('picked-extrude', 'visibility', 'visible');
       if (map.getLayer('picked-float-extrude')) map.setLayoutProperty('picked-float-extrude', 'visibility', 'none');
-      if (map.getLayer('picked-fill'))          // opacity는 GeoJSON properties에서 per-feature로 처리
     } else {
       // floating 모드
       if (map.getLayer('picked-extrude'))       map.setLayoutProperty('picked-extrude', 'visibility', 'none');
-      if (map.getLayer('picked-extrude'))       map.setLayoutProperty('picked-extrude', 'visibility', 'none');
-      if (map.getLayer('picked-fill'))          // opacity는 GeoJSON properties에서 per-feature로 처리
 
       const SLAB = 100;
       const floatFeatures: GeoJSON.Feature[] = pickedFeatures
