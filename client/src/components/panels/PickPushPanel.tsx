@@ -235,15 +235,26 @@ export function PickPushPanel() {
   const handleExportSVG = () => {
     if (pickedFeatures.length === 0 || !mapInstance) return;
 
-    // project()는 CSS픽셀 기준 반환 (devicePixelRatio 무관)
-    // PNG export: drawImage(canvas → resW×resH) = CSS픽셀 비율과 동일
-    // SVG: 동일한 비율로 변환해야 PNG 위에 정확히 오버레이 가능
-    const container = mapInstance.getContainer();
-    const cssW = container.clientWidth;
-    const cssH = container.clientHeight;
-    const scaleX = resW / cssW;
-    const scaleY = resH / cssH;
+    // PNG export와 동일한 좌표 변환 사용 (dpr + center-crop)
+    const src = mapInstance.getCanvas();
+    const dpr = window.devicePixelRatio || 1;
+    const cssW = src.width / dpr;
+    const cssH = src.height / dpr;
+    const targetRatio = resW / resH;
+    const srcRatio = cssW / cssH;
 
+    let cropX = 0, cropY = 0, cropW = src.width, cropH = src.height;
+    if (Math.abs(srcRatio - targetRatio) > 0.001) {
+      if (srcRatio > targetRatio) {
+        cropW = Math.round(src.height * targetRatio);
+        cropX = Math.round((src.width - cropW) / 2);
+      } else {
+        cropH = Math.round(src.width / targetRatio);
+        cropY = Math.round((src.height - cropH) / 2);
+      }
+    }
+
+    // project()는 CSS픽셀 반환 → dpr 곱해서 물리픽셀 → crop 기준 → 출력픽셀
     const svgParts = pickedFeatures.map((f) => {
       const geo = (f as any).geometry as GeoJSON.Geometry | undefined;
       if (!geo) return '';
@@ -255,8 +266,8 @@ export function PickPushPanel() {
       const d = rings.map((ring) => {
         return ring.map((coord, i) => {
           const pt = mapInstance.project([coord[0], coord[1]]);
-          const px = (pt.x * scaleX).toFixed(2);
-          const py = (pt.y * scaleY).toFixed(2);
+          const px = (((pt.x * dpr - cropX) / cropW) * resW).toFixed(2);
+          const py = (((pt.y * dpr - cropY) / cropH) * resH).toFixed(2);
           return `${i === 0 ? 'M' : 'L'}${px},${py}`;
         }).join(' ') + ' Z';
       }).join(' ');

@@ -762,14 +762,14 @@ export default function MapView() {
     if (pickDisplayMode === 'extrude') {
       if (map.getLayer('picked-extrude'))       map.setLayoutProperty('picked-extrude', 'visibility', 'visible');
       if (map.getLayer('picked-float-extrude')) map.setLayoutProperty('picked-float-extrude', 'visibility', 'none');
-      if (map.getLayer('picked-fill'))          map.setPaintProperty('picked-fill', 'fill-opacity', 0.6);
+      if (map.getLayer('picked-fill'))          map.setPaintProperty('picked-fill', 'fill-opacity', 1.0);
     } else {
       // floating 모드
       if (map.getLayer('picked-extrude'))       map.setLayoutProperty('picked-extrude', 'visibility', 'none');
       if (map.getLayer('picked-extrude'))       map.setLayoutProperty('picked-extrude', 'visibility', 'none');
-      if (map.getLayer('picked-fill'))          map.setPaintProperty('picked-fill', 'fill-opacity', 0.6);
+      if (map.getLayer('picked-fill'))          map.setPaintProperty('picked-fill', 'fill-opacity', 1.0);
 
-      const SLAB = 1;
+      const SLAB = 100;
       const floatFeatures: GeoJSON.Feature[] = pickedFeatures
         .filter((f) => !!(f as any).geometry && (f.floatHeight ?? 0) > 0)
         .map((f) => ({
@@ -1544,7 +1544,7 @@ function initCustomLayers(map: mapboxgl.Map) {
   if (!map.getSource('picked-features')) {
     map.addSource('picked-features', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
     map.addLayer({ id: 'picked-fill', type: 'fill', source: 'picked-features',
-      paint: { 'fill-color': ['get', 'fillColor'], 'fill-opacity': 0.6 },
+      paint: { 'fill-color': ['get', 'fillColor'], 'fill-opacity': 1.0 },
     });
     map.addLayer({ id: 'picked-border', type: 'line', source: 'picked-features',
       paint: { 'line-color': ['get', 'borderColor'], 'line-width': ['get', 'borderWidth'] },
@@ -1555,7 +1555,7 @@ function initCustomLayers(map: mapboxgl.Map) {
         'fill-extrusion-color': ['get', 'fillColor'],
         'fill-extrusion-height': ['get', 'extrudeHeight'],
         'fill-extrusion-base': 0,
-        'fill-extrusion-opacity': 0.9,
+        'fill-extrusion-opacity': 1.0,
       },
     });
   }
@@ -1567,7 +1567,7 @@ function initCustomLayers(map: mapboxgl.Map) {
         'fill-extrusion-color': ['get', 'fillColor'],
         'fill-extrusion-height': ['get', 'floatTop'],
         'fill-extrusion-base': ['get', 'floatBase'],
-        'fill-extrusion-opacity': 0.9,
+        'fill-extrusion-opacity': 0.8,
       },
     });
   }
