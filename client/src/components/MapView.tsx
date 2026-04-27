@@ -753,6 +753,8 @@ export default function MapView() {
           borderColor: f.borderColor,
           borderWidth: f.borderWidth,
           extrudeHeight: f.floatHeight ?? 0,
+          // 보더 두께를 meter로: px값 × 1500 (최소 2000m, 최대 8000m)
+          borderBase: Math.min(8000, Math.max(2000, (f.borderWidth ?? 1.5) * 1500)),
         },
       }));
 
@@ -760,11 +762,14 @@ export default function MapView() {
     baseSrc?.setData({ type: 'FeatureCollection', features: baseFeatures });
 
     if (pickDisplayMode === 'extrude') {
+      if (map.getLayer('picked-extrude-border')) map.setLayoutProperty('picked-extrude-border', 'visibility', 'visible');
       if (map.getLayer('picked-extrude'))       map.setLayoutProperty('picked-extrude', 'visibility', 'visible');
-      if (map.getLayer('picked-float-extrude')) map.setLayoutProperty('picked-float-extrude', 'visibility', 'none');
+      if (map.getLayer('picked-float-extrude')) map.setLayoutProperty('picked-float-border', 'visibility', 'none');
+        map.setLayoutProperty('picked-float-extrude', 'visibility', 'none');
       if (map.getLayer('picked-fill'))          map.setPaintProperty('picked-fill', 'fill-opacity', 1.0);
     } else {
       // floating 모드
+      if (map.getLayer('picked-extrude-border')) map.setLayoutProperty('picked-extrude-border', 'visibility', 'none');
       if (map.getLayer('picked-extrude'))       map.setLayoutProperty('picked-extrude', 'visibility', 'none');
       if (map.getLayer('picked-fill'))          map.setPaintProperty('picked-fill', 'fill-opacity', 1.0);
 
@@ -776,12 +781,18 @@ export default function MapView() {
           geometry: (f as any).geometry as GeoJSON.Geometry,
           properties: {
             fillColor: f.fillColor,
+            borderColor: f.borderColor,
+            borderBase: Math.min(8000, Math.max(2000, (f.borderWidth ?? 1.5) * 1500)),
             floatBase: f.floatHeight ?? 0,
             floatTop: (f.floatHeight ?? 0) + SLAB,
           },
         }));
       const floatSrc = map.getSource('picked-float') as mapboxgl.GeoJSONSource | undefined;
       floatSrc?.setData({ type: 'FeatureCollection', features: floatFeatures });
+      if (map.getLayer('picked-float-border')) {
+        map.setLayoutProperty('picked-float-border', 'visibility',
+          floatFeatures.length > 0 ? 'visible' : 'none');
+      }
       if (map.getLayer('picked-float-extrude')) {
         map.setLayoutProperty('picked-float-extrude', 'visibility',
           floatFeatures.length > 0 ? 'visible' : 'none');
@@ -1546,13 +1557,25 @@ function initCustomLayers(map: mapboxgl.Map) {
     map.addLayer({ id: 'picked-fill', type: 'fill', source: 'picked-features',
       paint: { 'fill-color': ['get', 'fillColor'], 'fill-opacity': 1.0 },
     });
-    // extrude 레이어: extrude 모드 전용
+    // extrude 보더: borderColor로 높이+보더두께만큼 먼저 렌더 → 측면에 보더 효과
+    map.addLayer({ id: 'picked-extrude-border', type: 'fill-extrusion', source: 'picked-features',
+      layout: { visibility: 'none' },
+      paint: {
+        'fill-extrusion-color': ['get', 'borderColor'],
+        'fill-extrusion-height': ['get', 'extrudeHeight'],
+        'fill-extrusion-base': 0,
+        'fill-extrusion-opacity': 1.0,
+        'fill-extrusion-translate': [0, 0],
+        'fill-extrusion-translate-anchor': 'map',
+      },
+    });
+    // extrude 메인: fill색으로 보더두께만큼 줄인 높이로 렌더
     map.addLayer({ id: 'picked-extrude', type: 'fill-extrusion', source: 'picked-features',
       layout: { visibility: 'none' },
       paint: {
         'fill-extrusion-color': ['get', 'fillColor'],
         'fill-extrusion-height': ['get', 'extrudeHeight'],
-        'fill-extrusion-base': 0,
+        'fill-extrusion-base': ['get', 'borderBase'],
         'fill-extrusion-opacity': 1.0,
       },
     });
@@ -1560,17 +1583,28 @@ function initCustomLayers(map: mapboxgl.Map) {
   // picked-float 소스: floating 모드용 (복사본이 공중에 뜸)
   if (!map.getSource('picked-float')) {
     map.addSource('picked-float', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-    map.addLayer({ id: 'picked-float-extrude', type: 'fill-extrusion', source: 'picked-float',
+    // float 보더
+    map.addLayer({ id: 'picked-float-border', type: 'fill-extrusion', source: 'picked-float',
       layout: { visibility: 'none' },
       paint: {
-        'fill-extrusion-color': ['get', 'fillColor'],
+        'fill-extrusion-color': ['get', 'borderColor'],
         'fill-extrusion-height': ['get', 'floatTop'],
         'fill-extrusion-base': ['get', 'floatBase'],
         'fill-extrusion-opacity': 1.0,
       },
     });
+    // float 메인
+    map.addLayer({ id: 'picked-float-extrude', type: 'fill-extrusion', source: 'picked-float',
+      layout: { visibility: 'none' },
+      paint: {
+        'fill-extrusion-color': ['get', 'fillColor'],
+        'fill-extrusion-height': ['get', 'floatTop'],
+        'fill-extrusion-base': ['+', ['get', 'floatBase'], ['get', 'borderBase']],
+        'fill-extrusion-opacity': 1.0,
+      },
+    });
   }
-  // picked-border: extrude/float 레이어보다 위에 추가 → 면 위에 보더 표시
+  // picked-border: 바닥면 2D 보더 (flat 모드용)
   if (!map.getLayer('picked-border')) {
     map.addLayer({ id: 'picked-border', type: 'line', source: 'picked-features',
       paint: { 'line-color': ['get', 'borderColor'], 'line-width': ['get', 'borderWidth'] },
