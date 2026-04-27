@@ -762,11 +762,11 @@ export default function MapView() {
     if (pickDisplayMode === 'extrude') {
       if (map.getLayer('picked-extrude'))       map.setLayoutProperty('picked-extrude', 'visibility', 'visible');
       if (map.getLayer('picked-float-extrude')) map.setLayoutProperty('picked-float-extrude', 'visibility', 'none');
-      if (map.getLayer('picked-fill'))          map.setPaintProperty('picked-fill', 'fill-opacity', 1.0);
+      if (map.getLayer('picked-fill'))          map.setPaintProperty('picked-fill', 'fill-opacity', 0.2);
     } else {
       // floating 모드
       if (map.getLayer('picked-extrude'))       map.setLayoutProperty('picked-extrude', 'visibility', 'none');
-      if (map.getLayer('picked-fill'))          map.setPaintProperty('picked-fill', 'fill-opacity', 1.0);
+      if (map.getLayer('picked-fill'))          map.setPaintProperty('picked-fill', 'fill-opacity', 0.35);
 
       const SLAB = 8000;
       const floatFeatures: GeoJSON.Feature[] = pickedFeatures
@@ -1544,7 +1544,10 @@ function initCustomLayers(map: mapboxgl.Map) {
     map.addSource('picked-features', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
     // flat fill/border: 항상 렌더 (extrude 모드에서도 바닥 표시)
     map.addLayer({ id: 'picked-fill', type: 'fill', source: 'picked-features',
-      paint: { 'fill-color': ['get', 'fillColor'], 'fill-opacity': 1.0 },
+      paint: { 'fill-color': ['get', 'fillColor'], 'fill-opacity': 0.35 },
+    });
+    map.addLayer({ id: 'picked-border', type: 'line', source: 'picked-features',
+      paint: { 'line-color': ['get', 'borderColor'], 'line-width': ['get', 'borderWidth'] },
     });
     // extrude 레이어: extrude 모드 전용
     map.addLayer({ id: 'picked-extrude', type: 'fill-extrusion', source: 'picked-features',
@@ -1553,7 +1556,7 @@ function initCustomLayers(map: mapboxgl.Map) {
         'fill-extrusion-color': ['get', 'fillColor'],
         'fill-extrusion-height': ['get', 'extrudeHeight'],
         'fill-extrusion-base': 0,
-        'fill-extrusion-opacity': 1.0,
+        'fill-extrusion-opacity': 0.75,
       },
     });
   }
@@ -1566,14 +1569,8 @@ function initCustomLayers(map: mapboxgl.Map) {
         'fill-extrusion-color': ['get', 'fillColor'],
         'fill-extrusion-height': ['get', 'floatTop'],
         'fill-extrusion-base': ['get', 'floatBase'],
-        'fill-extrusion-opacity': 1.0,
+        'fill-extrusion-opacity': 0.85,
       },
-    });
-  }
-  // picked-border: extrude/float 레이어보다 위에 추가 → 면 위에 보더 표시
-  if (!map.getLayer('picked-border')) {
-    map.addLayer({ id: 'picked-border', type: 'line', source: 'picked-features',
-      paint: { 'line-color': ['get', 'borderColor'], 'line-width': ['get', 'borderWidth'] },
     });
   }
 
