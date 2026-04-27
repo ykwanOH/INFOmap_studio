@@ -18,6 +18,15 @@ mapboxgl.accessToken =
 const VECTOR_STYLE = 'mapbox://styles/mapbox/streets-v12';
 const SATELLITE_STYLE = 'mapbox://styles/mapbox/satellite-streets-v12';
 
+// hex color + opacity → rgba string for per-feature opacity via fillColor
+function hexToRgba(hex: string, alpha: number): string {
+  const h = hex.replace('#', '');
+  const r = parseInt(h.substring(0, 2), 16);
+  const g = parseInt(h.substring(2, 4), 16);
+  const b = parseInt(h.substring(4, 6), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
 // BW Print stripe pattern generator — seamless tiling at any angle
 // 타일링 이음새 제거: 각도에 맞는 타일 크기를 수학적으로 계산
 // period 방향으로 타일이 완벽히 반복되도록 타일을 충분히 크게 설정
@@ -774,11 +783,10 @@ export default function MapView() {
         type: 'Feature' as const,
         geometry: (f as any).geometry as GeoJSON.Geometry,
         properties: {
-          fillColor: f.fillColor,
+          fillColor: hexToRgba(f.fillColor, f.opacity ?? 1),
           borderColor: f.borderColor,
           borderWidth: f.borderWidth,
           extrudeHeight: f.floatHeight ?? 0,
-          opacity: f.opacity ?? 1,
         },
       }));
 
@@ -808,10 +816,9 @@ export default function MapView() {
           type: 'Feature' as const,
           geometry: (f as any).geometry as GeoJSON.Geometry,
           properties: {
-            fillColor: f.fillColor,
+            fillColor: hexToRgba(f.fillColor, f.opacity ?? 1),
             floatBase: f.floatHeight ?? 0,
             floatTop: (f.floatHeight ?? 0) + SLAB,
-            opacity: f.opacity ?? 1,
           },
         }));
       const floatSrc = map.getSource('picked-float') as mapboxgl.GeoJSONSource | undefined;
@@ -821,20 +828,6 @@ export default function MapView() {
           floatFeatures.length > 0 ? 'visible' : 'none');
       }
     }
-
-    // opacity: data expression 미지원 → setPaintProperty로 개별 적용
-    // 현재 활성 세트의 opacity 사용 (세트가 여러 개면 마지막 feature 기준)
-    const activeOpacity = pickedFeatures.length > 0
-      ? (pickedFeatures[pickedFeatures.length - 1].opacity ?? 1)
-      : 1;
-    try {
-      if (map.getLayer('picked-fill'))
-        map.setPaintProperty('picked-fill', 'fill-opacity', activeOpacity);
-      if (map.getLayer('picked-extrude'))
-        map.setPaintProperty('picked-extrude', 'fill-extrusion-opacity', activeOpacity);
-      if (map.getLayer('picked-float-extrude'))
-        map.setPaintProperty('picked-float-extrude', 'fill-extrusion-opacity', activeOpacity);
-    } catch (_) {}
 
     const hasHeight = pickedFeatures.some((f) => (f.floatHeight ?? 0) > 0);
     if (hasHeight && map.getPitch() < 20) {
