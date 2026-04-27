@@ -769,7 +769,7 @@ export default function MapView() {
       if (map.getLayer('picked-extrude'))       map.setLayoutProperty('picked-extrude', 'visibility', 'none');
       if (map.getLayer('picked-fill'))          map.setPaintProperty('picked-fill', 'fill-opacity', 0.6);
 
-      const SLAB = 8000;
+      const SLAB = 1;
       const floatFeatures: GeoJSON.Feature[] = pickedFeatures
         .filter((f) => !!(f as any).geometry && (f.floatHeight ?? 0) > 0)
         .map((f) => ({
