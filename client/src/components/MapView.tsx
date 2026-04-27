@@ -785,6 +785,13 @@ export default function MapView() {
     const baseSrc = map.getSource('picked-features') as mapboxgl.GeoJSONSource | undefined;
     baseSrc?.setData({ type: 'FeatureCollection', features: baseFeatures });
 
+    // ── 디버그 ──
+    console.log('[Pick] mode:', pickDisplayMode);
+    console.log('[Pick] features:', baseFeatures.length, baseFeatures.map(f => f.properties));
+    console.log('[Pick] picked-extrude layer:', map.getLayer('picked-extrude'));
+    console.log('[Pick] picked-float-extrude layer:', map.getLayer('picked-float-extrude'));
+    console.log('[Pick] picked-features source:', map.getSource('picked-features'));
+
     if (pickDisplayMode === 'extrude') {
       // extrude: 바닥→높이까지 꽉 찬 기둥. 높이 0이면 안 나옴(정상)
       if (map.getLayer('picked-extrude'))       map.setLayoutProperty('picked-extrude', 'visibility', 'visible');
@@ -814,6 +821,20 @@ export default function MapView() {
           floatFeatures.length > 0 ? 'visible' : 'none');
       }
     }
+
+    // opacity: data expression 미지원 → setPaintProperty로 개별 적용
+    // 현재 활성 세트의 opacity 사용 (세트가 여러 개면 마지막 feature 기준)
+    const activeOpacity = pickedFeatures.length > 0
+      ? (pickedFeatures[pickedFeatures.length - 1].opacity ?? 1)
+      : 1;
+    try {
+      if (map.getLayer('picked-fill'))
+        map.setPaintProperty('picked-fill', 'fill-opacity', activeOpacity);
+      if (map.getLayer('picked-extrude'))
+        map.setPaintProperty('picked-extrude', 'fill-extrusion-opacity', activeOpacity);
+      if (map.getLayer('picked-float-extrude'))
+        map.setPaintProperty('picked-float-extrude', 'fill-extrusion-opacity', activeOpacity);
+    } catch (_) {}
 
     const hasHeight = pickedFeatures.some((f) => (f.floatHeight ?? 0) > 0);
     if (hasHeight && map.getPitch() < 20) {
@@ -1570,7 +1591,7 @@ function initCustomLayers(map: mapboxgl.Map) {
   if (!map.getSource('picked-features')) {
     map.addSource('picked-features', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
     map.addLayer({ id: 'picked-fill', type: 'fill', source: 'picked-features',
-      paint: { 'fill-color': ['get', 'fillColor'], 'fill-opacity': ['coalesce', ['get', 'opacity'], 1] },
+      paint: { 'fill-color': ['get', 'fillColor'], 'fill-opacity': 1 },
     });
     map.addLayer({ id: 'picked-border', type: 'line', source: 'picked-features',
       paint: { 'line-color': ['get', 'borderColor'], 'line-width': ['get', 'borderWidth'] },
@@ -1581,7 +1602,7 @@ function initCustomLayers(map: mapboxgl.Map) {
         'fill-extrusion-color': ['get', 'fillColor'],
         'fill-extrusion-height': ['get', 'extrudeHeight'],
         'fill-extrusion-base': 0,
-        'fill-extrusion-opacity': ['coalesce', ['get', 'opacity'], 1],
+        'fill-extrusion-opacity': 1,
       },
     });
   }
@@ -1593,7 +1614,7 @@ function initCustomLayers(map: mapboxgl.Map) {
         'fill-extrusion-color': ['get', 'fillColor'],
         'fill-extrusion-height': ['get', 'floatTop'],
         'fill-extrusion-base': ['get', 'floatBase'],
-        'fill-extrusion-opacity': ['coalesce', ['get', 'opacity'], 1],
+        'fill-extrusion-opacity': 1,
       },
     });
   }
