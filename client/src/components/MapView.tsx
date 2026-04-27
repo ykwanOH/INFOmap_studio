@@ -786,11 +786,13 @@ export default function MapView() {
     baseSrc?.setData({ type: 'FeatureCollection', features: baseFeatures });
 
     if (pickDisplayMode === 'extrude') {
+      // extrude: 바닥→높이까지 꽉 찬 기둥. 높이 0이면 안 나옴(정상)
       if (map.getLayer('picked-extrude'))       map.setLayoutProperty('picked-extrude', 'visibility', 'visible');
       if (map.getLayer('picked-float-extrude')) map.setLayoutProperty('picked-float-extrude', 'visibility', 'none');
+
     } else {
-      // floating 모드
-      if (map.getLayer('picked-extrude'))       map.setLayoutProperty('picked-extrude', 'visibility', 'none');
+      // floating: 높이 위치에 얇은 판. 높이 0이면 안 나옴(정상)
+      if (map.getLayer('picked-extrude')) map.setLayoutProperty('picked-extrude', 'visibility', 'none');
 
       const SLAB = 100;
       const floatFeatures: GeoJSON.Feature[] = pickedFeatures
@@ -1568,7 +1570,7 @@ function initCustomLayers(map: mapboxgl.Map) {
   if (!map.getSource('picked-features')) {
     map.addSource('picked-features', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
     map.addLayer({ id: 'picked-fill', type: 'fill', source: 'picked-features',
-      paint: { 'fill-color': ['get', 'fillColor'], 'fill-opacity': ['get', 'opacity'] },
+      paint: { 'fill-color': ['get', 'fillColor'], 'fill-opacity': ['coalesce', ['get', 'opacity'], 1] },
     });
     map.addLayer({ id: 'picked-border', type: 'line', source: 'picked-features',
       paint: { 'line-color': ['get', 'borderColor'], 'line-width': ['get', 'borderWidth'] },
@@ -1579,7 +1581,7 @@ function initCustomLayers(map: mapboxgl.Map) {
         'fill-extrusion-color': ['get', 'fillColor'],
         'fill-extrusion-height': ['get', 'extrudeHeight'],
         'fill-extrusion-base': 0,
-        'fill-extrusion-opacity': ['get', 'opacity'],
+        'fill-extrusion-opacity': ['coalesce', ['get', 'opacity'], 1],
       },
     });
   }
@@ -1591,7 +1593,7 @@ function initCustomLayers(map: mapboxgl.Map) {
         'fill-extrusion-color': ['get', 'fillColor'],
         'fill-extrusion-height': ['get', 'floatTop'],
         'fill-extrusion-base': ['get', 'floatBase'],
-        'fill-extrusion-opacity': ['get', 'opacity'],
+        'fill-extrusion-opacity': ['coalesce', ['get', 'opacity'], 1],
       },
     });
   }
