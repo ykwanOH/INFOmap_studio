@@ -18,13 +18,14 @@ mapboxgl.accessToken =
 const VECTOR_STYLE = 'mapbox://styles/mapbox/streets-v12';
 const SATELLITE_STYLE = 'mapbox://styles/mapbox/satellite-streets-v12';
 
-// hex color + opacity → rgba string for per-feature opacity via fillColor
-function hexToRgba(hex: string, alpha: number): string {
+// hex color → [r, g, b] 배열 (Mapbox rgba expression용)
+function hexToRgbArray(hex: string): [number, number, number] {
   const h = hex.replace('#', '');
-  const r = parseInt(h.substring(0, 2), 16);
-  const g = parseInt(h.substring(2, 4), 16);
-  const b = parseInt(h.substring(4, 6), 16);
-  return `rgba(${r},${g},${b},${alpha})`;
+  return [
+    parseInt(h.substring(0, 2), 16),
+    parseInt(h.substring(2, 4), 16),
+    parseInt(h.substring(4, 6), 16),
+  ];
 }
 
 // BW Print stripe pattern generator — seamless tiling at any angle
@@ -782,12 +783,17 @@ export default function MapView() {
       .map((f) => ({
         type: 'Feature' as const,
         geometry: (f as any).geometry as GeoJSON.Geometry,
-        properties: {
-          fillColor: hexToRgba(f.fillColor, f.opacity ?? 1),
-          borderColor: f.borderColor,
-          borderWidth: f.borderWidth,
-          extrudeHeight: f.floatHeight ?? 0,
-        },
+        properties: (() => {
+          const [fr, fg, fb] = hexToRgbArray(f.fillColor);
+          const fa = f.opacity ?? 1;
+          return {
+            fillColor: f.fillColor,
+            fillR: fr, fillG: fg, fillB: fb, fillA: fa,
+            borderColor: f.borderColor,
+            borderWidth: f.borderWidth,
+            extrudeHeight: f.floatHeight ?? 0,
+          };
+        })(),
       }));
 
     const baseSrc = map.getSource('picked-features') as mapboxgl.GeoJSONSource | undefined;
@@ -815,11 +821,16 @@ export default function MapView() {
         .map((f) => ({
           type: 'Feature' as const,
           geometry: (f as any).geometry as GeoJSON.Geometry,
-          properties: {
-            fillColor: hexToRgba(f.fillColor, f.opacity ?? 1),
-            floatBase: f.floatHeight ?? 0,
-            floatTop: (f.floatHeight ?? 0) + SLAB,
-          },
+          properties: (() => {
+            const [fr, fg, fb] = hexToRgbArray(f.fillColor);
+            const fa = f.opacity ?? 1;
+            return {
+              fillColor: f.fillColor,
+              fillR: fr, fillG: fg, fillB: fb, fillA: fa,
+              floatBase: f.floatHeight ?? 0,
+              floatTop: (f.floatHeight ?? 0) + SLAB,
+            };
+          })(),
         }));
       const floatSrc = map.getSource('picked-float') as mapboxgl.GeoJSONSource | undefined;
       floatSrc?.setData({ type: 'FeatureCollection', features: floatFeatures });
@@ -1584,7 +1595,7 @@ function initCustomLayers(map: mapboxgl.Map) {
   if (!map.getSource('picked-features')) {
     map.addSource('picked-features', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
     map.addLayer({ id: 'picked-fill', type: 'fill', source: 'picked-features',
-      paint: { 'fill-color': ['get', 'fillColor'], 'fill-opacity': 1 },
+      paint: { 'fill-color': ['rgba', ['get', 'fillR'], ['get', 'fillG'], ['get', 'fillB'], ['get', 'fillA']] },
     });
     map.addLayer({ id: 'picked-border', type: 'line', source: 'picked-features',
       paint: { 'line-color': ['get', 'borderColor'], 'line-width': ['get', 'borderWidth'] },
@@ -1592,7 +1603,7 @@ function initCustomLayers(map: mapboxgl.Map) {
     map.addLayer({ id: 'picked-extrude', type: 'fill-extrusion', source: 'picked-features',
       layout: { visibility: 'none' },
       paint: {
-        'fill-extrusion-color': ['get', 'fillColor'],
+        'fill-extrusion-color': ['rgba', ['get', 'fillR'], ['get', 'fillG'], ['get', 'fillB'], ['get', 'fillA']],
         'fill-extrusion-height': ['get', 'extrudeHeight'],
         'fill-extrusion-base': 0,
         'fill-extrusion-opacity': 1,
@@ -1604,7 +1615,7 @@ function initCustomLayers(map: mapboxgl.Map) {
     map.addLayer({ id: 'picked-float-extrude', type: 'fill-extrusion', source: 'picked-float',
       layout: { visibility: 'none' },
       paint: {
-        'fill-extrusion-color': ['get', 'fillColor'],
+        'fill-extrusion-color': ['rgba', ['get', 'fillR'], ['get', 'fillG'], ['get', 'fillB'], ['get', 'fillA']],
         'fill-extrusion-height': ['get', 'floatTop'],
         'fill-extrusion-base': ['get', 'floatBase'],
         'fill-extrusion-opacity': 1,
