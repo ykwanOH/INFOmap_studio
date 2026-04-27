@@ -773,72 +773,140 @@ export default function MapView() {
     }
   }, [extrudeLightAzimuth, extrudeAOIntensity]);
 
-  // ── Picked features rendering ───────────────────────────────────────────
+  // ── Picked features rendering — 세트별 레이어 방식 ──────────────────────
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !styleLoadedRef.current) return;
 
-    const baseFeatures: GeoJSON.Feature[] = pickedFeatures
-      .filter((f) => !!(f as any).geometry)
-      .map((f) => ({
-        type: 'Feature' as const,
-        geometry: (f as any).geometry as GeoJSON.Geometry,
-        properties: (() => {
-          const [fr, fg, fb] = hexToRgbArray(f.fillColor);
-          const fa = f.opacity ?? 1;
-          return {
+    const SLAB = 100;
+
+    // 기존 picked-group 레이어/소스 목록
+    const style = map.getStyle();
+    const existingGroupIds = new Set<number>();
+    (style?.layers || []).forEach(l => {
+      const m = l.id.match(/^picked-group-(\d+)-/);
+      if (m) existingGroupIds.add(Number(m[1]));
+    });
+
+    // groupId별 분류
+    const groups = new Map<number, typeof pickedFeatures>();
+    pickedFeatures.forEach(f => {
+      const gid = (f as any).groupId ?? 0;
+      if (!groups.has(gid)) groups.set(gid, []);
+      groups.get(gid)!.push(f);
+    });
+
+    // 없어진 그룹 제거
+    existingGroupIds.forEach(gid => {
+      if (!groups.has(gid)) {
+        for (const suffix of ['fill', 'border', 'extrude', 'float-extrude']) {
+          try { if (map.getLayer(`picked-group-${gid}-${suffix}`)) map.removeLayer(`picked-group-${gid}-${suffix}`); } catch (_) {}
+        }
+        try { if (map.getSource(`picked-group-${gid}`)) map.removeSource(`picked-group-${gid}`); } catch (_) {}
+        try { if (map.getSource(`picked-group-${gid}-float`)) map.removeSource(`picked-group-${gid}-float`); } catch (_) {}
+      }
+    });
+
+    // 그룹별 레이어 생성/업데이트
+    groups.forEach((features, gid) => {
+      const srcId = `picked-group-${gid}`;
+      const floatSrcId = `picked-group-${gid}-float`;
+      const opacity = features[0]?.opacity ?? 1;
+
+      const baseFeatures: GeoJSON.Feature[] = features
+        .filter(f => !!(f as any).geometry)
+        .map(f => ({
+          type: 'Feature' as const,
+          geometry: (f as any).geometry as GeoJSON.Geometry,
+          properties: {
             fillColor: f.fillColor,
-            fillR: fr, fillG: fg, fillB: fb, fillA: fa,
             borderColor: f.borderColor,
             borderWidth: f.borderWidth,
             extrudeHeight: f.floatHeight ?? 0,
-          };
-        })(),
-      }));
+          },
+        }));
 
-    const baseSrc = map.getSource('picked-features') as mapboxgl.GeoJSONSource | undefined;
-    baseSrc?.setData({ type: 'FeatureCollection', features: baseFeatures });
+      // 소스
+      if (!map.getSource(srcId)) {
+        map.addSource(srcId, { type: 'geojson', data: { type: 'FeatureCollection', features: baseFeatures } });
+      } else {
+        (map.getSource(srcId) as mapboxgl.GeoJSONSource).setData({ type: 'FeatureCollection', features: baseFeatures });
+      }
 
-    // ── 디버그 ──
-    console.log('[Pick] mode:', pickDisplayMode);
-    console.log('[Pick] features:', baseFeatures.length, baseFeatures.map(f => f.properties));
-    console.log('[Pick] picked-extrude layer:', map.getLayer('picked-extrude'));
-    console.log('[Pick] picked-float-extrude layer:', map.getLayer('picked-float-extrude'));
-    console.log('[Pick] picked-features source:', map.getSource('picked-features'));
+      // fill
+      if (!map.getLayer(`${srcId}-fill`)) {
+        map.addLayer({ id: `${srcId}-fill`, type: 'fill', source: srcId,
+          paint: { 'fill-color': ['get', 'fillColor'], 'fill-opacity': opacity },
+        });
+      } else {
+        try { map.setPaintProperty(`${srcId}-fill`, 'fill-opacity', opacity); } catch (_) {}
+      }
 
-    if (pickDisplayMode === 'extrude') {
-      // extrude: 바닥→높이까지 꽉 찬 기둥. 높이 0이면 안 나옴(정상)
-      if (map.getLayer('picked-extrude'))       map.setLayoutProperty('picked-extrude', 'visibility', 'visible');
-      if (map.getLayer('picked-float-extrude')) map.setLayoutProperty('picked-float-extrude', 'visibility', 'none');
+      // border
+      if (!map.getLayer(`${srcId}-border`)) {
+        map.addLayer({ id: `${srcId}-border`, type: 'line', source: srcId,
+          paint: { 'line-color': ['get', 'borderColor'], 'line-width': ['get', 'borderWidth'] },
+        });
+      }
 
-    } else {
-      // floating: 높이 위치에 얇은 판. 높이 0이면 안 나옴(정상)
-      if (map.getLayer('picked-extrude')) map.setLayoutProperty('picked-extrude', 'visibility', 'none');
+      if (pickDisplayMode === 'extrude') {
+        try { if (map.getLayer(`${srcId}-float-extrude`)) map.setLayoutProperty(`${srcId}-float-extrude`, 'visibility', 'none'); } catch (_) {}
 
-      const SLAB = 100;
-      const floatFeatures: GeoJSON.Feature[] = pickedFeatures
-        .filter((f) => !!(f as any).geometry && (f.floatHeight ?? 0) > 0)
-        .map((f) => ({
-          type: 'Feature' as const,
-          geometry: (f as any).geometry as GeoJSON.Geometry,
-          properties: (() => {
-            const [fr, fg, fb] = hexToRgbArray(f.fillColor);
-            const fa = f.opacity ?? 1;
-            return {
+        if (!map.getLayer(`${srcId}-extrude`)) {
+          map.addLayer({ id: `${srcId}-extrude`, type: 'fill-extrusion', source: srcId,
+            paint: {
+              'fill-extrusion-color': ['get', 'fillColor'],
+              'fill-extrusion-height': ['get', 'extrudeHeight'],
+              'fill-extrusion-base': 0,
+              'fill-extrusion-opacity': opacity,
+            },
+          });
+        } else {
+          try { map.setPaintProperty(`${srcId}-extrude`, 'fill-extrusion-opacity', opacity); } catch (_) {}
+          try { map.setLayoutProperty(`${srcId}-extrude`, 'visibility', 'visible'); } catch (_) {}
+        }
+
+      } else {
+        try { if (map.getLayer(`${srcId}-extrude`)) map.setLayoutProperty(`${srcId}-extrude`, 'visibility', 'none'); } catch (_) {}
+
+        const floatFeatures: GeoJSON.Feature[] = features
+          .filter(f => !!(f as any).geometry && (f.floatHeight ?? 0) > 0)
+          .map(f => ({
+            type: 'Feature' as const,
+            geometry: (f as any).geometry as GeoJSON.Geometry,
+            properties: {
               fillColor: f.fillColor,
-              fillR: fr, fillG: fg, fillB: fb, fillA: fa,
               floatBase: f.floatHeight ?? 0,
               floatTop: (f.floatHeight ?? 0) + SLAB,
-            };
-          })(),
-        }));
-      const floatSrc = map.getSource('picked-float') as mapboxgl.GeoJSONSource | undefined;
-      floatSrc?.setData({ type: 'FeatureCollection', features: floatFeatures });
-      if (map.getLayer('picked-float-extrude')) {
-        map.setLayoutProperty('picked-float-extrude', 'visibility',
-          floatFeatures.length > 0 ? 'visible' : 'none');
+            },
+          }));
+
+        if (!map.getSource(floatSrcId)) {
+          map.addSource(floatSrcId, { type: 'geojson', data: { type: 'FeatureCollection', features: floatFeatures } });
+        } else {
+          (map.getSource(floatSrcId) as mapboxgl.GeoJSONSource).setData({ type: 'FeatureCollection', features: floatFeatures });
+        }
+
+        if (!map.getLayer(`${srcId}-float-extrude`)) {
+          map.addLayer({ id: `${srcId}-float-extrude`, type: 'fill-extrusion', source: floatSrcId,
+            paint: {
+              'fill-extrusion-color': ['get', 'fillColor'],
+              'fill-extrusion-height': ['get', 'floatTop'],
+              'fill-extrusion-base': ['get', 'floatBase'],
+              'fill-extrusion-opacity': opacity,
+            },
+          });
+        } else {
+          try { map.setPaintProperty(`${srcId}-float-extrude`, 'fill-extrusion-opacity', opacity); } catch (_) {}
+          try { map.setLayoutProperty(`${srcId}-float-extrude`, 'visibility', floatFeatures.length > 0 ? 'visible' : 'none'); } catch (_) {}
+        }
       }
-    }
+    });
+
+    // 기존 단일 picked-features 소스 비움
+    try {
+      (map.getSource('picked-features') as mapboxgl.GeoJSONSource)?.setData({ type: 'FeatureCollection', features: [] });
+    } catch (_) {}
 
     const hasHeight = pickedFeatures.some((f) => (f.floatHeight ?? 0) > 0);
     if (hasHeight && map.getPitch() < 20) {
