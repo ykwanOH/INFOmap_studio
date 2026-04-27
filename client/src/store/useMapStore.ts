@@ -173,6 +173,12 @@ export interface MapStoreState {
   setElevationPreset: (v: 'natural' | 'vivid' | 'arctic') => void;
   elevationColors: { shadow: string; highlight: string; midtone: string };
   setElevationColors: (c: { shadow: string; highlight: string; midtone: string }) => void;
+  extrudeLightAzimuth: number;        // 빛 방향 수평각 (0~360°)
+  setExtrudeLightAzimuth: (v: number) => void;
+  extrudeAOIntensity: number;         // Ambient Occlusion 강도 (0~1)
+  setExtrudeAOIntensity: (v: number) => void;
+  extrudeAORadius: number;            // AO 반경 (m)
+  setExtrudeAORadius: (v: number) => void;
   illuminationAngle: number;
   setIlluminationAngle: (v: number) => void;
 
@@ -459,6 +465,12 @@ export const useMapStore = create<MapStoreState>((set, get) => ({
   elevationPreset: 'natural',
   setElevationPreset: (v) => set({ elevationPreset: v }),
   elevationColors: { shadow: '#c09050', highlight: '#d0d0d0', midtone: '#4a8a4a' },
+  extrudeLightAzimuth: 210,
+  setExtrudeLightAzimuth: (v) => set({ extrudeLightAzimuth: v }),
+  extrudeAOIntensity: 0.5,
+  setExtrudeAOIntensity: (v) => set({ extrudeAOIntensity: v }),
+  extrudeAORadius: 60,
+  setExtrudeAORadius: (v) => set({ extrudeAORadius: v }),
   setElevationColors: (c) => set({ elevationColors: c }),
   illuminationAngle: 315,
   setIlluminationAngle: (v) => set({ illuminationAngle: v }),

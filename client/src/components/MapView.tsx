@@ -194,6 +194,7 @@ export default function MapView() {
     flyFromPickMode, flyToPickMode, setFlyRouteFrom, setFlyRouteTo, setFlyFromPickMode, setFlyToPickMode,
     flyRoute,
     pickMode, addPickedFeature, pickedFeatures, pickDisplayMode, pickUnitMode,
+    extrudeLightAzimuth, extrudeAOIntensity, extrudeAORadius,
     extraLook,
     bwStripeColor, bwStripeAngle, bwStripeWidth, bwStripeGap,
     vintagePreset, digitalPreset,
@@ -737,6 +738,30 @@ export default function MapView() {
     if (map.getLayer('fly-route-line')) map.setLayoutProperty('fly-route-line', 'visibility', 'none');
     if (map.getLayer('fly-route-points')) map.setLayoutProperty('fly-route-points', 'visibility', 'visible');
   }, [flyRoute]);
+
+  // ── Extrude light & AO ────────────────────────────────────────────────
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !styleLoadedRef.current) return;
+    // 빛 방향: azimuth를 Mapbox light position [radial, azimuthal, polar]로 변환
+    const azRad = (extrudeLightAzimuth * Math.PI) / 180;
+    try {
+      map.setLight({
+        anchor: 'map',
+        color: 'white',
+        intensity: 0.5,
+        position: [1.5, extrudeLightAzimuth, 45],  // [radial, azimuthal°, polar°]
+      });
+    } catch (_) {}
+    // AO: picked-extrude, picked-float-extrude에 적용
+    for (const layerId of ['picked-extrude', 'picked-float-extrude']) {
+      try {
+        if (!map.getLayer(layerId)) continue;
+        map.setPaintProperty(layerId, 'fill-extrusion-ambient-occlusion-intensity', extrudeAOIntensity);
+        map.setPaintProperty(layerId, 'fill-extrusion-ambient-occlusion-radius', extrudeAORadius);
+      } catch (_) {}
+    }
+  }, [extrudeLightAzimuth, extrudeAOIntensity, extrudeAORadius]);
 
   // ── Picked features rendering ───────────────────────────────────────────
   useEffect(() => {

@@ -32,6 +32,9 @@ export function PickPushPanel() {
     pickMode, setPickMode,
     pickDisplayMode, setPickDisplayMode,
     pickUnitMode, setPickUnitMode,
+    extrudeLightAzimuth, setExtrudeLightAzimuth,
+    extrudeAOIntensity, setExtrudeAOIntensity,
+    extrudeAORadius, setExtrudeAORadius,
     pickedFeatures,
     currentGroupId,
     updatePickedFeature,
@@ -347,6 +350,29 @@ export function PickPushPanel() {
           ))}
         </div>
       </div>
+
+      {/* 빛 방향 + AO — extrude/float 모드에서 표시 */}
+      <SliderControl
+        label="Light Dir"
+        value={extrudeLightAzimuth}
+        min={0} max={360} step={5}
+        onChange={setExtrudeLightAzimuth}
+        displayValue={`${extrudeLightAzimuth}°`}
+      />
+      <SliderControl
+        label="AO Intensity"
+        value={extrudeAOIntensity}
+        min={0} max={1} step={0.05}
+        onChange={setExtrudeAOIntensity}
+        displayValue={extrudeAOIntensity.toFixed(2)}
+      />
+      <SliderControl
+        label="AO Radius"
+        value={extrudeAORadius}
+        min={10} max={200} step={10}
+        onChange={setExtrudeAORadius}
+        displayValue={`${extrudeAORadius}m`}
+      />
 
       {/* 높이 슬라이더 — 현재 세트 전체에 동시 적용 */}
       {currentGroupFeatures.length > 0 && (
