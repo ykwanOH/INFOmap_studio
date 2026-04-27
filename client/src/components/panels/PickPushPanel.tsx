@@ -275,7 +275,7 @@ export function PickPushPanel() {
           return `${i === 0 ? 'M' : 'L'}${px},${py}`;
         }).join(' ') + ' Z';
       }).join(' ');
-      return `<path d="${d}" fill="${f.fillColor}" fill-opacity="0.7" stroke="${f.borderColor}" stroke-width="${f.borderWidth}" fill-rule="evenodd" />`;
+      return `<path d="${d}" fill="${f.fillColor}" fill-opacity="1" stroke="${f.borderColor}" stroke-width="${f.borderWidth}" fill-rule="evenodd" />`;
     }).filter(Boolean);
 
     const svg = `<?xml version="1.0" encoding="UTF-8"?>
