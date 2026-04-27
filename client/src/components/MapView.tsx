@@ -194,7 +194,7 @@ export default function MapView() {
     flyFromPickMode, flyToPickMode, setFlyRouteFrom, setFlyRouteTo, setFlyFromPickMode, setFlyToPickMode,
     flyRoute,
     pickMode, addPickedFeature, pickedFeatures, pickDisplayMode, pickUnitMode,
-    extrudeLightAzimuth, extrudeAOIntensity, extrudeAORadius,
+    extrudeLightAzimuth, extrudeAOIntensity,
     extraLook,
     bwStripeColor, bwStripeAngle, bwStripeWidth, bwStripeGap,
     vintagePreset, digitalPreset,
@@ -758,10 +758,10 @@ export default function MapView() {
       try {
         if (!map.getLayer(layerId)) continue;
         map.setPaintProperty(layerId, 'fill-extrusion-ambient-occlusion-intensity', extrudeAOIntensity);
-        map.setPaintProperty(layerId, 'fill-extrusion-ambient-occlusion-radius', extrudeAORadius);
+        map.setPaintProperty(layerId, 'fill-extrusion-ambient-occlusion-radius', 60);
       } catch (_) {}
     }
-  }, [extrudeLightAzimuth, extrudeAOIntensity, extrudeAORadius]);
+  }, [extrudeLightAzimuth, extrudeAOIntensity]);
 
   // ── Picked features rendering ───────────────────────────────────────────
   useEffect(() => {
@@ -778,6 +778,7 @@ export default function MapView() {
           borderColor: f.borderColor,
           borderWidth: f.borderWidth,
           extrudeHeight: f.floatHeight ?? 0,
+          opacity: f.opacity ?? 1,
         },
       }));
 
@@ -787,12 +788,12 @@ export default function MapView() {
     if (pickDisplayMode === 'extrude') {
       if (map.getLayer('picked-extrude'))       map.setLayoutProperty('picked-extrude', 'visibility', 'visible');
       if (map.getLayer('picked-float-extrude')) map.setLayoutProperty('picked-float-extrude', 'visibility', 'none');
-      if (map.getLayer('picked-fill'))          map.setPaintProperty('picked-fill', 'fill-opacity', 0.9);
+      if (map.getLayer('picked-fill'))          // opacity는 GeoJSON properties에서 per-feature로 처리
     } else {
       // floating 모드
       if (map.getLayer('picked-extrude'))       map.setLayoutProperty('picked-extrude', 'visibility', 'none');
       if (map.getLayer('picked-extrude'))       map.setLayoutProperty('picked-extrude', 'visibility', 'none');
-      if (map.getLayer('picked-fill'))          map.setPaintProperty('picked-fill', 'fill-opacity', 0.9);
+      if (map.getLayer('picked-fill'))          // opacity는 GeoJSON properties에서 per-feature로 처리
 
       const SLAB = 100;
       const floatFeatures: GeoJSON.Feature[] = pickedFeatures
@@ -804,6 +805,7 @@ export default function MapView() {
             fillColor: f.fillColor,
             floatBase: f.floatHeight ?? 0,
             floatTop: (f.floatHeight ?? 0) + SLAB,
+            opacity: f.opacity ?? 1,
           },
         }));
       const floatSrc = map.getSource('picked-float') as mapboxgl.GeoJSONSource | undefined;
@@ -1569,7 +1571,7 @@ function initCustomLayers(map: mapboxgl.Map) {
   if (!map.getSource('picked-features')) {
     map.addSource('picked-features', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
     map.addLayer({ id: 'picked-fill', type: 'fill', source: 'picked-features',
-      paint: { 'fill-color': ['get', 'fillColor'], 'fill-opacity': 0.9 },
+      paint: { 'fill-color': ['get', 'fillColor'], 'fill-opacity': ['get', 'opacity'] },
     });
     map.addLayer({ id: 'picked-border', type: 'line', source: 'picked-features',
       paint: { 'line-color': ['get', 'borderColor'], 'line-width': ['get', 'borderWidth'] },
@@ -1580,7 +1582,7 @@ function initCustomLayers(map: mapboxgl.Map) {
         'fill-extrusion-color': ['get', 'fillColor'],
         'fill-extrusion-height': ['get', 'extrudeHeight'],
         'fill-extrusion-base': 0,
-        'fill-extrusion-opacity': 1.0,
+        'fill-extrusion-opacity': ['get', 'opacity'],
       },
     });
   }
@@ -1592,7 +1594,7 @@ function initCustomLayers(map: mapboxgl.Map) {
         'fill-extrusion-color': ['get', 'fillColor'],
         'fill-extrusion-height': ['get', 'floatTop'],
         'fill-extrusion-base': ['get', 'floatBase'],
-        'fill-extrusion-opacity': 1.0,
+        'fill-extrusion-opacity': ['get', 'opacity'],
       },
     });
   }

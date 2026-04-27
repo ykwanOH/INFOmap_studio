@@ -54,6 +54,7 @@ export interface PickedFeature {
   borderColor: string;
   borderWidth: number;
   floatHeight: number;   // floating/extrude 공유 높이 (m)
+  opacity: number;       // 개체 투명도 (0~1)
   geometry?: GeoJSON.Geometry;
   groupId: number;       // 세트 번호: Float/Extrude 적용 시 새 그룹 시작
 }
@@ -136,6 +137,7 @@ export interface MapStoreState {
   addPickedFeature: (f: PickedFeature) => void;
   updatePickedFeature: (id: string | number, updates: Partial<PickedFeature>) => void;
   updateCurrentGroupHeight: (height: number) => void;  // 현재 세트 전체 높이 변경
+  updateCurrentGroupOpacity: (opacity: number) => void; // 현재 세트 전체 투명도 변경
   updateCurrentGroupProps: (updates: Partial<PickedFeature>) => void;  // 현재 세트 전체 속성 변경
   commitGroup: () => void;           // 새 세트 시작
   clearPickedFeatures: () => void;
@@ -397,6 +399,13 @@ export const useMapStore = create<MapStoreState>((set, get) => ({
     set((state) => ({
       pickedFeatures: state.pickedFeatures.map((f) =>
         f.groupId === state.currentGroupId ? { ...f, floatHeight: height } : f
+      ),
+      groupModified: true,
+    })),
+  updateCurrentGroupOpacity: (opacity) =>
+    set((state) => ({
+      pickedFeatures: state.pickedFeatures.map((f) =>
+        f.groupId === state.currentGroupId ? { ...f, opacity } : f
       ),
       groupModified: true,
     })),
