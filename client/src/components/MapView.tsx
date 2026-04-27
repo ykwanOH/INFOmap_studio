@@ -753,8 +753,10 @@ export default function MapView() {
           borderColor: f.borderColor,
           borderWidth: f.borderWidth,
           extrudeHeight: f.floatHeight ?? 0,
-          // cap 두께: borderWidth px → meter 환산 (최소 3000m, 최대 12000m)
+          // cap 두께: borderWidth px → meter 환산
           capThickness: Math.min(12000, Math.max(3000, (f.borderWidth ?? 1.5) * 2000)),
+          // cap 안쪽 fill base: cap-border에서 링 두께만큼 안으로
+          borderBase: Math.min(10000, Math.max(1000, (f.borderWidth ?? 1.5) * 1000)),
         },
       }));
 
@@ -777,7 +779,7 @@ export default function MapView() {
       if (map.getLayer('picked-extrude'))       map.setLayoutProperty('picked-extrude', 'visibility', 'none');
       if (map.getLayer('picked-fill'))          map.setPaintProperty('picked-fill', 'fill-opacity', 1.0);
 
-      const SLAB = 8000;
+      const SLAB = 100;  // floating 판 두께: 시각적 최소값
       const floatFeatures: GeoJSON.Feature[] = pickedFeatures
         .filter((f) => !!(f as any).geometry && (f.floatHeight ?? 0) > 0)
         .map((f) => ({
@@ -787,6 +789,7 @@ export default function MapView() {
             fillColor: f.fillColor,
             borderColor: f.borderColor,
             capThickness: Math.min(12000, Math.max(3000, (f.borderWidth ?? 1.5) * 2000)),
+            borderBase: Math.min(10000, Math.max(1000, (f.borderWidth ?? 1.5) * 1000)),
             floatBase: f.floatHeight ?? 0,
             floatTop: (f.floatHeight ?? 0) + SLAB,
           },
@@ -1572,23 +1575,24 @@ function initCustomLayers(map: mapboxgl.Map) {
 
     // ── extrude 모드: 상단 cap (보더색) — 꼭대기에 얇은 슬라이스
     // base = height - capThickness, height = height + 1 → 상단면에 borderColor 링
+    // cap-border: 꼭대기 위로 솟아오름 (base=H, height=H+capThickness)
     map.addLayer({ id: 'picked-extrude-cap-border', type: 'fill-extrusion', source: 'picked-features',
       layout: { visibility: 'none' },
       paint: {
         'fill-extrusion-color': ['get', 'borderColor'],
-        'fill-extrusion-height': ['+', ['get', 'extrudeHeight'], 1],
-        'fill-extrusion-base': ['-', ['get', 'extrudeHeight'], ['get', 'capThickness']],
+        'fill-extrusion-height': ['+', ['get', 'extrudeHeight'], ['get', 'capThickness']],
+        'fill-extrusion-base': ['get', 'extrudeHeight'],
         'fill-extrusion-opacity': 1.0,
       },
     });
 
-    // ── extrude 모드: 상단 cap (fill색) — border 링만 남기도록 덮음
+    // cap-fill: cap-border 위에 fillColor로 덮어 테두리 링만 남김
     map.addLayer({ id: 'picked-extrude-cap-fill', type: 'fill-extrusion', source: 'picked-features',
       layout: { visibility: 'none' },
       paint: {
         'fill-extrusion-color': ['get', 'fillColor'],
-        'fill-extrusion-height': ['+', ['get', 'extrudeHeight'], 2],
-        'fill-extrusion-base': ['get', 'extrudeHeight'],
+        'fill-extrusion-height': ['+', ['get', 'extrudeHeight'], ['get', 'capThickness']],
+        'fill-extrusion-base': ['+', ['get', 'extrudeHeight'], ['get', 'borderBase']],
         'fill-extrusion-opacity': 1.0,
       },
     });
@@ -1609,24 +1613,24 @@ function initCustomLayers(map: mapboxgl.Map) {
       },
     });
 
-    // float 상단 cap (보더색)
+    // float cap-border: 꼭대기 위로
     map.addLayer({ id: 'picked-float-cap-border', type: 'fill-extrusion', source: 'picked-float',
       layout: { visibility: 'none' },
       paint: {
         'fill-extrusion-color': ['get', 'borderColor'],
-        'fill-extrusion-height': ['+', ['get', 'floatTop'], 1],
-        'fill-extrusion-base': ['-', ['get', 'floatTop'], ['get', 'capThickness']],
+        'fill-extrusion-height': ['+', ['get', 'floatTop'], ['get', 'capThickness']],
+        'fill-extrusion-base': ['get', 'floatTop'],
         'fill-extrusion-opacity': 1.0,
       },
     });
 
-    // float 상단 cap (fill색 덮개)
+    // float cap-fill: 안쪽 fill로 덮어 링만 남김
     map.addLayer({ id: 'picked-float-cap-fill', type: 'fill-extrusion', source: 'picked-float',
       layout: { visibility: 'none' },
       paint: {
         'fill-extrusion-color': ['get', 'fillColor'],
-        'fill-extrusion-height': ['+', ['get', 'floatTop'], 2],
-        'fill-extrusion-base': ['get', 'floatTop'],
+        'fill-extrusion-height': ['+', ['get', 'floatTop'], ['get', 'capThickness']],
+        'fill-extrusion-base': ['+', ['get', 'floatTop'], ['get', 'borderBase']],
         'fill-extrusion-opacity': 1.0,
       },
     });
