@@ -150,7 +150,13 @@ function vitePluginManusDebugCollector(): Plugin {
   };
 }
 
-const plugins = [react(), tailwindcss(), jsxLocPlugin(), vitePluginManusRuntime(), vitePluginManusDebugCollector()];
+const isDev = process.env.NODE_ENV !== "production";
+
+const plugins = [
+  react(),
+  tailwindcss(),
+  ...(isDev ? [jsxLocPlugin(), vitePluginManusRuntime(), vitePluginManusDebugCollector()] : []),
+];
 
 export default defineConfig({
   plugins,
@@ -169,7 +175,7 @@ export default defineConfig({
   },
   server: {
     port: 3000,
-    strictPort: false, // Will find next available port if 3000 is busy
+    strictPort: false,
     host: true,
     allowedHosts: [
       ".manuspre.computer",
